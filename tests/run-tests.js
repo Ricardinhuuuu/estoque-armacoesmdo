@@ -11,7 +11,7 @@ let ok = 0, fail = 0, grupo = "";
 const resultados = [];
 function t(nome, fn) {
   try { fn(); ok++; resultados.push("  ✅ " + nome); }
-  catch (e) { fail++; resultados.push("  ❌ " + nome + "\n       → " + (e && e.message ? e.message : e)); }
+  catch (e) { fail++; resultados.push("  ❌ " + nome + "\n       → " + (e && e.message ? e.message : e) + (e && e.diagnostico ? " " + JSON.stringify(e.diagnostico) : "")); }
 }
 function g(n) { grupo = n; resultados.push("\n" + n); }
 const pendentes = [];
@@ -455,8 +455,13 @@ t("1.6 reabrir a câmera não relê a etiqueta que está na frente", () => {
 /* entra como administrador e espera o login assíncrono terminar */
 function adminPronto(env) {
   comoAdmin(env);
-  return flush().then(() => {
-    okv(run(env, "!!cur"), "login de teste não concluiu");
+  return flush().then(async () => {
+    for (let i = 0; i < 10 && !run(env, "!!cur"); i++) await flush();
+    if (!run(env, "!!cur")) {
+      const e = new Error("login de teste não concluiu");
+      e.diagnostico = run(env, `({U:U.map(u=>u.l),alerts:(typeof window!=="undefined"&&window.__alerts)||null})`);
+      throw e;
+    }
     return env;
   });
 }
@@ -521,6 +526,151 @@ t("1.7 etiqueta real do repositório decodifica e acha o produto", () => {
   eq(r.c, "80202503194", "código normalizado:");
   okv(r.existe, "o código da etiqueta real precisa existir no catálogo");
   okv(!!r.nome, "produto sem descrição");
+});
+
+/* ================= ETAPA 2 — CONSULTA POR CÂMERA E POR FOTO ================= */
+g("Etapa 2 — consulta por câmera e foto (somente leitura)");
+t("2.1 pesquisa antiga (código, modelo, cor) continua funcionando", () => {
+  const env = novo();
+  const r = run(env, `(()=>{
+    const p=PP[0];
+    const porCodigo=PP.filter(x=>x[0].includes(p[0].slice(0,8))).length;
+    const porModelo=PP.filter(x=>x[1].includes(p[1].split(" ")[0])).length;
+    const porCor=PP.filter(x=>x[2]===p[2]).length;
+    return {porCodigo,porModelo,porCor};
+  })()`);
+  okv(r.porCodigo > 0, "busca por código não encontra nada");
+  okv(r.porModelo > 0, "busca por modelo não encontra nada");
+  okv(r.porCor > 0, "busca por cor não encontra nada");
+});
+t("2.1 a aba Estoque tem as duas opções novas, sem tirar a busca textual", () => {
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(html.includes('id="qCam"') && html.includes("Buscar por código de barras"), "falta o botão de código de barras");
+  okv(html.includes('id="qPho"') && html.includes("Buscar por foto"), "falta o botão de foto");
+  okv(html.includes('placeholder="🔎 Buscar por código, modelo ou cor"'), "a busca textual original sumiu");
+});
+t("2.5 consulta encontra o produto do cadastro real", () => {
+  const env = novo();
+  const r = run(env, `(()=>{ const p=PP[0]; return {p, q:qBusca(p[0])}; })()`);
+  eq(r.q.c, r.p[0], "código consultado:");
+  eq(r.q.produto, r.p[1], "descrição:");
+  eq(r.q.cor, r.p[2], "cor:");
+});
+t("2.5 código não cadastrado não associa nenhum produto", () => {
+  const env = novo();
+  const r = run(env, `({a:qBusca("0000000000001"), b:qBusca(""), c:qBusca("ABC")})`);
+  eq(r.a, null, "código inexistente:");
+  eq(r.b, null, "código vazio:");
+  eq(r.c, null, "texto qualquer:");
+});
+t("2.6 cartão mostra todos os campos e a frase obrigatória", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const p=PP[0];
+      qLeitura(p[0]);
+      const el=document.getElementById("qRes");
+      return {txt:el.textContent, html:el.innerHTML};
+    })()`);
+    okv(r.txt.includes("Esta consulta não altera o estoque."), "falta a frase obrigatória");
+    okv(r.txt.includes("Código interno") || r.html.includes("Código interno"), "falta o código");
+    okv(r.html.includes("Cor:"), "falta a cor");
+    okv(r.html.includes("Estoque mínimo"), "falta o estoque mínimo");
+    okv(r.html.includes("Saldo disponível"), "falta o saldo");
+    okv(r.html.includes("Situação:"), "falta a situação do estoque");
+  }));
+t("2.7 consulta NUNCA altera o estoque", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes={m:M.length,bal:JSON.stringify(bal()),cnt:JSON.stringify(CNT),req:REQ.length};
+      qLeitura(PP[0][0]);
+      qLeitura(PP[5][0]);
+      qLeitura("9999999999999");
+      qCartao("9999999999999",null);
+      const depois={m:M.length,bal:JSON.stringify(bal()),cnt:JSON.stringify(CNT),req:REQ.length};
+      return {antes,depois};
+    })()`);
+    eq(r.depois, r.antes, "a consulta não pode mexer em movimentações, saldo, contagem nem pedidos:");
+  }));
+t("2.7 consulta não grava nada no localStorage", () =>
+  adminPronto(novo()).then((env) => {
+    const antes = new Map(env.store);
+    run(env, `(()=>{ qLeitura(PP[0][0]); qLeitura("8888888888888"); })()`);
+    eq([...env.store.keys()].sort(), [...antes.keys()].sort(), "chaves gravadas:");
+    eq(env.store.get("mdo_m"), antes.get("mdo_m"), "movimentações:");
+  }));
+t("2.6 produto não cadastrado mostra aviso e nada muda", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=JSON.stringify(bal());
+      qLeitura("1234567890123");
+      return {txt:document.getElementById("qRes").textContent, antes, depois:JSON.stringify(bal())};
+    })()`);
+    okv(r.txt.includes("não cadastrado"), "aviso pouco claro: " + r.txt);
+    eq(r.depois, r.antes, "saldo depois de consulta inválida:");
+  }));
+t("2.3/2.4 estratégias de foto cobrem rotação, cinza, contraste e recorte", () => {
+  const env = novo();
+  const e = run(env, "qEstrategias()");
+  okv(Array.isArray(e) && e.length >= 12, "poucas estratégias: " + (e && e.length));
+  [0, 90, 180, 270].forEach((r) => okv(e.some((x) => x.rot === r), "falta rotação " + r));
+  okv(e.some((x) => x.cinza), "falta tons de cinza");
+  okv(e.some((x) => x.contraste), "falta contraste");
+  okv(e.some((x) => x.nitidez), "falta nitidez");
+  okv(e.some((x) => x.regiao), "falta recorte de região");
+  okv(e.every((x) => x.maxLado === 1600), "resolução de referência deve ser 1600 no maior lado");
+});
+t("2.4 pré-processamento reduz para 1600 px no maior lado", () => {
+  const env = novo();
+  const r = run(env, `(()=>{
+    const img={width:4000,height:3000,naturalWidth:4000,naturalHeight:3000};
+    const a=qCanvas(img,{});
+    const b=qCanvas(img,{rot:90});
+    return {a:{w:a.width,h:a.height},b:{w:b.width,h:b.height}};
+  })()`);
+  eq(r.a, { w: 1600, h: 1200 }, "canvas sem rotação:");
+  eq(r.b, { w: 1200, h: 1600 }, "canvas rotacionado 90°:");
+});
+t("2.4 recorte devolve só a região pedida", () => {
+  const env = novo();
+  const r = run(env, `(()=>{
+    const cv=qCanvas({width:1600,height:1000,naturalWidth:1600,naturalHeight:1000},{});
+    const rec=qRecorte(cv,{x:0.25,y:0.5,w:0.5,h:0.25});
+    return {w:rec.width,h:rec.height};
+  })()`);
+  eq(r, { w: 800, h: 250 }, "tamanho do recorte:");
+});
+t("2.3 foto com código legível devolve o código e não altera o estoque", () =>
+  adminPronto(novo()).then((env) => {
+    /* detector simulado que só acerta na 3ª tentativa, para exercitar as camadas */
+    const r = run(env, `(async()=>{
+      const antes=JSON.stringify(bal());
+      let n=0;
+      window.BarcodeDetector=class{static getSupportedFormats(){return Promise.resolve(FMT)}
+        async detect(){n++;return n>=3?[{rawValue:PP[0][0]}]:[]}};
+      const img=await qCarregarImagem({name:"etiqueta.png",size:1000});
+      const ests=qEstrategias();
+      let achado=null,tentativas=0;
+      for(const est of ests){
+        tentativas++;
+        let cv=qCanvas(img,est);
+        if(est.regiao)cv=qRecorte(cv,est.regiao);
+        const t=await qDetectarCanvas(cv);
+        if(t){achado=t;break}
+      }
+      return {achado,tentativas,antes,depois:JSON.stringify(bal()),codigo:PP[0][0]};
+    })()`);
+    return Promise.resolve(r).then((x) => {
+      okv(x.achado, "não decodificou nenhuma camada");
+      eq(x.achado, x.codigo, "código lido:");
+      okv(x.tentativas >= 3, "deveria tentar camadas em sequência, tentou " + x.tentativas);
+      eq(x.depois, x.antes, "a leitura de foto não pode alterar o saldo:");
+    });
+  }));
+t("2.4 foto ilegível explica a causa provável", () => {
+  const env = novo();
+  const txt = run(env, "qMotivoFoto()");
+  ["desfocada", "pouca luz", "cortado", "resolução", "formato"].forEach((t) =>
+    okv(txt.toLowerCase().includes(t), "a mensagem deveria citar: " + t));
 });
 
 (async () => {

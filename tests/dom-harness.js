@@ -28,7 +28,21 @@ function makeEnv(opts = {}) {
       removeChild(c) { el.children = el.children.filter((x) => x !== c); },
       remove() {}, focus() {}, click() { if (el.onclick) el.onclick({ target: el }); },
       querySelector: (s) => sel(el, s), closest: () => null, setAttribute() {}, addEventListener() {},
-      getContext: () => null, play: async () => {}, getCapabilities: () => ({}), applyConstraints: async () => {},
+      play: async () => {}, getCapabilities: () => ({}), applyConstraints: async () => {},
+      width: 0, height: 0,
+      toDataURL: () => "data:image/png;base64,AAA",
+      getContext(kind) {
+        if (kind !== "2d") return null;
+        const cv = el;
+        const img = () => (cv._pixels || (cv._pixels = new Uint8ClampedArray(Math.max(1, cv.width * cv.height * 4)).fill(200)));
+        const ctx = {
+          canvas: cv, save() {}, restore() {}, translate() {}, rotate() {},
+          drawImage(src) { cv._draws = (cv._draws || 0) + 1; cv._fonte = src; },
+          getImageData: (x, y, w, h) => ({ width: w, height: h, data: img() }),
+          putImageData: (d) => { cv._pixels = d.data; cv._put = (cv._put || 0) + 1; },
+        };
+        return ctx;
+      },
       getTracks: () => [{ stop() {} }], getVideoTracks: () => [{ getCapabilities: () => ({}), applyConstraints: async () => {} }],
     };
     Object.defineProperty(el, "innerHTML", {
@@ -66,8 +80,19 @@ function makeEnv(opts = {}) {
     document, localStorage, console,
     navigator: { vibrate() {}, mediaDevices: undefined, userAgent: "node" },
     window: {}, URL: { createObjectURL: () => "blob:x", revokeObjectURL() {} },
-    Blob: class { constructor() {} }, setTimeout: (f) => { try { f(); } catch (e) {} return 0; },
-    clearTimeout() {}, Math, Date, JSON, Promise, Map, Set, parseInt, parseFloat, isFinite, Number, String, Object, Array, TextEncoder,
+    Blob: class { constructor() {} },
+    /* timers de verdade, como no navegador: o app usa corridas com tempo limite */
+    setTimeout, setInterval, clearInterval, queueMicrotask,
+    FileReader: class {
+      readAsDataURL() { this.result = "data:image/png;base64,AAA"; if (this.onload) this.onload(); }
+    },
+    Image: class {
+      constructor() { this.width = 1200; this.height = 800; }
+      set src(v) { this._src = v; if (this.onload) this.onload(); }
+      get src() { return this._src; }
+    },
+    createImageBitmap: async (f) => ({ width: 1200, height: 800, close() {}, _file: f }),
+    clearTimeout, Math, Date, JSON, Promise, Map, Set, parseInt, parseFloat, isFinite, Number, String, Object, Array, TextEncoder,
     crypto: require("crypto").webcrypto,
     confirm: (m) => { log.confirms = (log.confirms || []).concat(m); return respostas.confirm; },
     prompt: (m, d) => { log.prompts = (log.prompts || []).concat(m); return respostas.prompt.length ? respostas.prompt.shift() : d; },
