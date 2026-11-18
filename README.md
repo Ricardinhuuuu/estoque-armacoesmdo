@@ -23,7 +23,8 @@ mdo-estoque/
 │   ├── ETAPA1_CAMERA.md             # Câmera: zoom 3,4x, desempenho, biblioteca empacotada
 │   ├── ETAPA2_BUSCA_FOTO.md         # Consulta por código de barras e foto na aba Estoque
 │   ├── PROMPT_MESTRE_BASE44.md      # Especificação herdada (legado: o Base44 não é mais usado)
-│   └── ETAPA3_SINCRONIZACAO.md      # Como ligar a sincronização na Vercel + Postgres
+│   ├── ETAPA3_SINCRONIZACAO.md      # Como ligar a sincronização na Vercel + Postgres
+│   └── ETAPA4_CONTAS_SERVIDOR.md    # Login, autocadastro e admin com segurança no servidor
 ├── tests/
 │   ├── run-tests.js                 # 62 testes automatizados (revisão + Etapas 1 e 2)
 │   └── dom-harness.js               # Mini-DOM para rodar os testes no Node
@@ -85,7 +86,9 @@ O app funciona sozinho no aparelho, mas o estoque **compartilhado** depende da A
 - auditoria com data, hora, responsável, produto, quantidade, tipo e aparelho.
 
 Configuração (`DATABASE_URL` e `SYNC_TOKEN`) e passo a passo: `docs/ETAPA3_SINCRONIZACAO.md`.
-Ainda no aparelho, para a Etapa 4: autenticação de servidor (usuários, senhas com salt, bloqueio).
+Etapa 4 (já implementada, `api/contas.js`): login validado no servidor, PBKDF2-SHA256 com sal,
+bloqueio após 3 tentativas, desativação, senha provisória com troca obrigatória e painel de contas
+para o administrador. Ver `docs/ETAPA4_CONTAS_SERVIDOR.md`.
 
 ---
 
