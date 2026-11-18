@@ -111,7 +111,7 @@ const fmt=ts=>new Date(ts).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"
 const avKey="mdo_av";
 async function H(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("mdo|"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=5381;for(const ch of "mdo|"+s)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
-const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync"};
+const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess"};
 const sP=(k,v)=>{try{localStorage.setItem(K[k],JSON.stringify(v))}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true)}};
 const sM=()=>sP("m",M),sU=()=>sP("u",U),sR=()=>sP("req",REQ),sC=()=>sP("cnt",CNT),sMin=()=>sP("min",MIN);
 const sF=()=>sP("fila",FILA),sS=()=>sP("sync",SYNC);
@@ -132,6 +132,8 @@ let cur=null,mode="out",qty=1,sc=null,last="",lastT=0,audioCtx=null,idx={};
 /* ETAPA 3 — fila de envio: só sai daqui depois que o servidor confirma */
 let FILA=lsOK("fila",[]);
 let SYNC=lsOK("sync",{url:"",token:"",desde:0,ultimoOk:0,ultimoErro:""});
+/* ETAPA 4 — sessão validada no servidor: o token fica no aparelho, o papel vem do servidor */
+let SESS=ls(K.sess,null)||{token:"",l:"",exp:0};
 
 const reidx=()=>{idx={};PP.forEach((p,i)=>idx[p[0]]=i)};reidx();
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -188,7 +190,9 @@ function falhaTentativa(u){
   avisar("O operador "+u.n+" ("+u.l+") bloqueou o acesso por tentativas de senha incorreta",{alvo:u.l});
   return "Acesso bloqueado: mais de 3 tentativas com senha incorreta. Entre em contato com o administrador."}
  sU();return "Login ou senha incorretos. Tentativas restantes: "+(3-u.t)+"."}
-async function lgSubmit(){initAudio();const l=String($("lgL").value).trim().toLowerCase(),p=$("lgP").value;
+async function lgSubmit(){initAudio();
+ /* ETAPA 4 — com servidor configurado, quem valida a senha é o servidor */
+ if(contasAtivas())return entrarNoServidor();const l=String($("lgL").value).trim().toLowerCase(),p=$("lgP").value;
  if(!l||!p){$("lgE").textContent="Preencha login e senha.";return}
  if(!U.length){
   const n=$("lgN").value.trim();
@@ -354,6 +358,68 @@ async function sincronizar(opts){
 /* reenvio automático: tenta de novo quando a rede volta */
 window.addEventListener("online",()=>{if(syncAtivo())sincronizar({silencioso:true})});
 setInterval(()=>{if(syncAtivo()&&FILA.length)sincronizar({silencioso:true})},30000);
+
+/* ===== ETAPA 4 — Login, autocadastro e administração com segurança no servidor ===== */
+/* Com servidor configurado, senha, papel, bloqueio e desativação são decididos pela API da Vercel.
+   Sem servidor, o app segue funcionando local e diz isso — nunca finge ter validado. */
+function contasAtivas(){return !!(SYNC.url&&SYNC.token)}
+function sessValida(){return contasAtivas()&&SESS.token&&SESS.exp>Date.now()}
+function salvarSess(j){
+ SESS={token:j.sessao||"",l:j.usuario?j.usuario.l:"",exp:Date.now()+(12*60*60*1000)};
+ sv(K.sess,SESS);
+ if(j.usuario){
+  const i=U.findIndex(x=>x.l===j.usuario.l);
+  const reg=Object.assign({h:"(servidor)"},j.usuario);
+  if(i<0)U.push(reg);else U[i]=Object.assign(U[i],reg);
+  sU();
+ }
+}
+function contasHeaders(extra){
+ return Object.assign({"Content-Type":"application/json","X-MDO-Token":SYNC.token,"X-MDO-Sessao":SESS.token||""},extra||{});
+}
+/* chama a API de contas e devolve o corpo já em JSON */
+async function apiContas(acao,dados){
+ if(!contasAtivas())throw new Error("Sincronização desligada: configure o endereço e o segredo em Admin › Sincronização.");
+ const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/contas",{
+  method:"POST",headers:contasHeaders(),body:JSON.stringify(Object.assign({acao},dados||{}))});
+ const j=await r.json().catch(()=>({}));
+ return j||{};
+}
+/* login validado no servidor (conta tentativas e bloqueia lá também) */
+async function entrarNoServidor(){
+ const l=String($("lgL").value).trim().toLowerCase(),p=$("lgP").value;
+ if(!l||!p){$("lgE").textContent="Preencha login e senha.";return}
+ const primeiro=!U.length;
+ const dados={login:l,senha:p};
+ if(primeiro){dados.criarAdmin=true;dados.nome=$("lgN").value.trim()}
+ $("lgB").disabled=true;
+ try{
+  const j=await apiContas("entrar",dados);
+  if(!j.ok){$("lgE").textContent=j.erro||"Não foi possível entrar.";beep(false);return}
+  salvarSess(j);
+  if(j.trocaObrigatoria){cur=U.find(x=>x.l===l);$("lg").style.display="none";trocaObrigServidor(l,p);return}
+  enter(l);audit(j.criado?"AUTOCADASTRO":"LOGIN",l,"servidor");
+ }catch(e){$("lgE").textContent=(e&&e.message)||"Sem conexão com o servidor.";beep(false)}
+ finally{$("lgB").disabled=false}
+}
+/* troca obrigatória de senha provisória, validada no servidor */
+function trocaObrigServidor(l,atual){
+ const b=$("lgB"),t=$("lgT");
+ $("lgN").style.display="none";$("lgL").value=l;$("lgL").disabled=true;
+ t.textContent="Troca de senha obrigatória: escolha uma nova senha (diferente da provisória)";
+ $("lgE").textContent="";$("lgP").value="";$("lgP").type="password";$("lgS").style.display="block";b.disabled=false;b.textContent="Salvar nova senha";
+ b.onclick=async()=>{
+  const nova=$("lgP").value;
+  if(nova.length<6){$("lgE").textContent="A senha precisa ter pelo menos 6 caracteres.";return}
+  b.disabled=true;
+  try{
+   const j=await apiContas("trocarSenha",{login:l,senhaAtual:atual,novaSenha:nova});
+   if(!j.ok){$("lgE").textContent=j.erro||"Não foi possível trocar a senha.";return}
+   salvarSess(j);audit("TROCA DE SENHA",l,"servidor");
+   $("lgL").disabled=false;$("lgS").style.display="none";$("lgB").onclick=()=>lgSubmit();enter(l);
+  }catch(e){$("lgE").textContent=(e&&e.message)||"Sem conexão com o servidor."}
+  finally{b.disabled=false}
+ }}
 
 /* ===== ETAPA 2 — Consulta por câmera e por foto (somente leitura: nunca altera o estoque) ===== */
 const qState={sc:null,leitor:null,ultimo:0,ultimoC:""};
@@ -628,6 +694,9 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
  h+='<div class="card"><h3>🕵 Auditoria (últimos 30)</h3>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></div>';
  h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){const av=ls(avKey,[]).filter(a=>a.lido!==true);return av.map((a,i)=>'<div class="item"><span><b>'+esc(a.m)+'</b><span class="mu">'+fmt(a.ts)+'</span></span><button type="button" class="pill" data-a="av" data-i="'+i+'">Marcar lido</button></div>').join("")||'<div class="mu">Nenhum aviso pendente.</div>'})())+'</div>';
+ if(contasAtivas())h+='<div class="card"><h3>👥 Contas no servidor</h3><div class="mu" id="ctS">'+(sessValida()?"Sessão válida — o servidor decide papel e bloqueio.":"Sem sessão de servidor: entre novamente para administrar contas.")+'</div>'+
+  '<button type="button" class="btn" data-a="ctListar">🔄 Carregar contas do servidor</button>'+
+  '<div id="ctL"></div></div>';
  h+='<div class="card"><h3>🔄 Sincronização</h3><div class="mu" id="syS"></div>'+
   '<input class="in" id="syU" placeholder="Endereço do app na Vercel (https://seu-app.vercel.app)" value="'+esc(SYNC.url||"")+'" autocapitalize="none" inputmode="url">'+
   '<input class="in" id="syT" type="password" placeholder="Segredo compartilhado (SYNC_TOKEN)" value="'+esc(SYNC.token||"")+'" autocapitalize="none">'+
@@ -636,6 +705,7 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
  h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
  $("adm").innerHTML=h;
+ $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
  syncStatus()}
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
@@ -644,6 +714,23 @@ $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
  act(a,a==="cm"?i:+i)};
 async function act(a,i){
  if(!isA()&&a!=="av")return;
+ if(a==="ctListar"){apiContas("listar").then(j=>{
+   const alvo=$("ctL");if(!alvo)return;
+   if(!j.ok){alvo.innerHTML='<div class="mu">'+esc(j.erro||"Falhou")+'</div>';return}
+   alvo.innerHTML=(j.usuarios||[]).map(u=>'<div class="item"><span><b>'+esc(u.n)+'</b> <span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+' · '+
+    (u.st==="bloq"?"🔴 bloqueado":u.st==="desat"?"⚪ desativado":"🟢 ativo")+(u.temp?" · senha provisória":"")+'</span></span><span>'+
+    (u.st==="bloq"?'<button type="button" class="btn ghost" data-a="ctDesb" data-l="'+esc(u.l)+'">Desbloquear</button>':'')+
+    (u.st==="desat"?'<button type="button" class="btn ghost" data-a="ctReat" data-l="'+esc(u.l)+'">Reativar</button>':'')+
+    (u.st==="ativo"?'<button type="button" class="btn ghost" data-a="ctDesat" data-l="'+esc(u.l)+'">Desativar</button>':'')+
+    '<button type="button" class="btn ghost" data-a="ctSenha" data-l="'+esc(u.l)+'">Senha provisória</button></span></div>').join("")||'<div class="mu">Nenhuma conta no servidor ainda.</div>';
+  }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
+ if(a==="ctDesb"||a==="ctReat"||a==="ctDesat"||a==="ctSenha"){
+  const acaoMap={ctDesb:"desbloquear",ctReat:"reativar",ctDesat:"desativar",ctSenha:"senhaProvisoria"};
+  apiContas(acaoMap[a],{login:i}).then(j=>{
+   if(!j.ok)return toast(j.erro||"Falhou",true);
+   if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
+   audit("CONTA SERVIDOR",i,acaoMap[a]);act("ctListar");
+  }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
  if(a==="sySalvar"){
   const u=String($("syU").value||"").trim().replace(/\/$/,""),t=String($("syT").value||"").trim();
   if(u&&!/^https:\/\//.test(u))return alert("O endereço precisa começar com https://");
