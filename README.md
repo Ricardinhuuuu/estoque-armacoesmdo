@@ -13,16 +13,20 @@ mdo-estoque/
 ├── README.md                        # Este arquivo
 ├── index.html                       # Aplicativo (arquivo único) — é este que vai para o deploy
 ├── manifest.webmanifest             # Nome, ícone e modo standalone ao instalar na tela de início
+├── vendor/
+│   ├── html5-qrcode.min.js          # Leitor de código de barras empacotado (funciona sem internet)
+│   └── html5-qrcode.LICENSE         # Licença Apache-2.0 da biblioteca
 ├── src/
 │   └── index_versao6.html           # Cópia idêntica de index.html (referência do prompt mestre)
 ├── docs/
+│   ├── ETAPA0_DIAGNOSTICO.md        # Diagnóstico técnico: backend, banco, riscos, plano de backup
+│   ├── ETAPA1_CAMERA.md             # Câmera: zoom 3,4x, desempenho, biblioteca empacotada
 │   └── PROMPT_MESTRE_BASE44.md      # Especificação técnica completa e etapas obrigatórias (Base44)
 ├── tests/
-│   ├── run-tests.js                 # 36 testes automatizados das correções
+│   ├── run-tests.js                 # 49 testes automatizados (revisão + Etapa 1)
 │   └── dom-harness.js               # Mini-DOM para rodar os testes no Node
 └── assets/
     ├── Icone_MDO.png                # Ícone oficial do aplicativo (617x617, original)
-    ├── Icone_MDO_1024.png           # Ícone em 1024x1024 (lojas e materiais)
     ├── icon-180.png                 # Ícone 180x180 (apple-touch-icon, embutido no index.html)
     ├── icon-192.png                 # Ícone 192x192 (manifest)
     └── Codigo_de_barra.png          # Etiqueta real de armação (80202503194 · 5CL661045417140C4)
@@ -86,7 +90,7 @@ verdade, precisam ir para o backend (Seção 6.1 de `docs/PROMPT_MESTRE_BASE44.m
 
 1. Suba os arquivos deste repositório no **GitHub**.
 2. Conecte ou importe o repositório no **Base44** (ou anexe `docs/PROMPT_MESTRE_BASE44.md`,
-   `src/index_versao6.html`, `assets/Icone_MDO_1024.png` e `assets/Codigo_de_barra.png`).
+   `src/index_versao6.html`, `assets/Icone_MDO.png` e `assets/Codigo_de_barra.png`).
 3. Instrua a IA a seguir **estritamente a ordem da Seção 2** de `docs/PROMPT_MESTRE_BASE44.md`, validando
    o **Checklist Obrigatório (Seção 11)** ao final de cada etapa antes de autorizar a próxima.
 

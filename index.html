@@ -13,7 +13,7 @@
 <script>
 /* Carregador com várias fontes e nova tentativa: se uma falhar, tenta a próxima */
 const LIBS={
- qr:{ok:()=>!!window.Html5Qrcode,u:["https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js","https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js","https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"]},
+ qr:{ok:()=>!!window.Html5Qrcode,u:["vendor/html5-qrcode.min.js","https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js","https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js","https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"]},
  xl:{ok:()=>!!window.XLSX,u:["https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js","https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"]}};
 function loadLib(k){const L=LIBS[k];if(L.ok())return Promise.resolve();if(L.p)return L.p;
  const one=u=>new Promise((res,rej)=>{const s=document.createElement("script");let d=false;const end=f=>{if(d)return;d=true;clearTimeout(t);f()};
@@ -397,6 +397,30 @@ function camErr(e){const n=(e&&e.name)||String(e);
 const dedupe=t=>{const agora=Date.now();const c=String(t);
  if(c===last){if(agora-lastT<1500)return false;lastT=agora;scan(c);return true}
  last=c;lastT=agora;scan(c);return true};
+/* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
+   Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
+   O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
+const ZOOM=3.4;
+function zoomAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.zoom=msg}
+async function aplicarZoom(stream,box){
+ let max=0;
+ try{const t=stream.getVideoTracks()[0],c=t.getCapabilities&&t.getCapabilities();
+  if(c&&c.zoom){max=Number(c.zoom.max)||0;
+   const alvo=Math.min(ZOOM,max);
+   if(alvo>1)await t.applyConstraints({advanced:[{zoom:alvo}]});}}catch(e){}
+ const v=box&&box.querySelector("video");
+ const zNativo=max>1;
+ const digital=!zNativo||max<ZOOM;   // o digital completa o que a lente não alcança
+ if(v){
+  v.style.transformOrigin="50% 50%";
+  if(zNativo){v.style.transform="";}
+  else{v.style.transform="scale("+ZOOM+")";}
+ }
+ if(!zNativo)zoomAviso("Zoom 3,4x por ampliação digital (este aparelho não expõe zoom de câmera).");
+ else if(max<ZOOM)zoomAviso("Zoom de câmera até "+max.toFixed(1)+"x; o restante até 3,4x é ampliação digital.");
+ else zoomAviso("");
+ return{nativo:zNativo,max,digital}
+}
 function addLaser(box){if(box.querySelector("#lz"))return;const z=document.createElement("div");z.id="lz";z.innerHTML='<div class="ln"></div>';box.appendChild(z)}
 async function focusCont(track){try{const c=track.getCapabilities&&track.getCapabilities();if(c&&c.focusMode&&c.focusMode.includes("continuous"))await track.applyConstraints({advanced:[{focusMode:"continuous"}]})}catch(e){}}
 /* Motor 1 (mais rápido, sem internet): leitor nativo do navegador (Android/Chrome) */
@@ -407,9 +431,11 @@ async function startNative(box,f){
  catch(e){if(e&&e.name==="OverconstrainedError")stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});else throw e}
  const v=document.createElement("video");v.setAttribute("playsinline","");v.muted=true;v.autoplay=true;v.style.cssText="width:100%;display:block;aspect-ratio:16/9;object-fit:contain";v.srcObject=stream;box.appendChild(v);
  try{await v.play()}catch(e){}
- focusCont(stream.getVideoTracks()[0]);let on=true;
+ focusCont(stream.getVideoTracks()[0]);
+ const z=await aplicarZoom(stream,box);
+ let on=true;
  (async()=>{while(on){try{if(v.readyState>=2){const r=await det.detect(v);if(r.length)dedupe(String(r[0].rawValue))}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
- return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""}}}
+ return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""},zoom:z}}
 /* Motor 2 (iPhone/Safari e demais): biblioteca html5-qrcode */
 async function startLib(box){
  const F=Html5QrcodeSupportedFormats,o={verbose:false,formatsToSupport:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
@@ -420,8 +446,22 @@ async function startLib(box){
   if(e&&(e.name==="NotAllowedError"||e.name==="NotReadableError"||e.name==="SecurityError"))throw e;
   q=new Html5Qrcode("cam",o);await q.start({facingMode:"environment"},cfg,dedupe,()=>{})}
  try{const tr=q.getRunningTrackCameraCapabilities();if(tr&&tr.focusMode&&tr.focusMode.isSupported("continuous"))await q.applyVideoConstraints({advanced:[{focusMode:"continuous"}]})}catch(e){}
+ let z={nativo:false,max:0,digital:true};
+ try{
+  const v=box&&box.querySelector("video");
+  const src=v&&(v.srcObject);
+  if(src&&src.getVideoTracks){z=await aplicarZoom(src,box)}
+  else if(v){
+   // html5-qrcode pode usar <canvas>; nesse caso o zoom é aplicado via constraints da track ativa
+   const cap=q.getRunningTrackCameraCapabilities&&q.getRunningTrackCameraCapabilities();
+   const max=(cap&&cap.zoomFeature&&cap.zoomFeature.isSupported&&cap.zoomFeature.isSupported())?Number(cap.zoomFeature.max&&cap.zoomFeature.max())||0:0;
+   if(max>1){await q.applyVideoConstraints({advanced:[{zoom:Math.min(ZOOM,max)}]});z={nativo:true,max,digital:max<ZOOM};zoomAviso(max<ZOOM?"Zoom de câmera até "+max.toFixed(1)+"x; o restante até 3,4x é ampliação digital.":"")}
+   else if(v){v.style.transformOrigin="50% 50%";v.style.transform="scale("+ZOOM+")";z={nativo:false,max:0,digital:true};zoomAviso("Zoom 3,4x por ampliação digital (este aparelho não expõe zoom de câmera).")}
+  }
+ }catch(e){}
+ q.mdoZoom=z;
  return q}
-$("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");
+$("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");last="";lastT=0;
  if(sc)return camOff();
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}
  box.style.display="block";msg.textContent="Iniciando câmera…";$("camBtn").disabled=true;
@@ -433,7 +473,7 @@ $("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");
    try{await loadLib("qr")}catch(e){throw{name:"LibFail"}}
    sc=await startLib(box)}
   addLaser(box);
-  msg.textContent="✅ Câmera ativa! Deixe o código dentro da faixa verde, a uns 10–15 cm.";$("camBtn").textContent="⏹ Desligar câmera";
+  msg.textContent="✅ Câmera ativa! Deixe o código dentro da faixa verde, a uns 10–15 cm."+(msg.dataset.zoom?" "+msg.dataset.zoom:"");$("camBtn").textContent="⏹ Desligar câmera";
  }catch(e){try{if(sc)await sc.stop()}catch(x){}sc=null;box.innerHTML="";box.style.display="none";
   msg.textContent=(e&&e.name==="LibFail")?"Não consegui carregar o leitor (internet fraca ou bloqueada). Toque em 'Ligar câmera' de novo, use a foto ou digite abaixo.":camErr(e)}
  $("camBtn").disabled=false};
