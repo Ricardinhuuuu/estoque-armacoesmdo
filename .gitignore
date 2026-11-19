@@ -1,0 +1,7 @@
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Nada de dados reais de estoque no repositório
+backup_estoque_mdo_*.json
+*.bak
