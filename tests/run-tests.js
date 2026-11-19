@@ -1398,7 +1398,7 @@ g("Etapa 6.1 — câmera: zoom, dedupe e diagnóstico");
 t("6.1 zoom de câmera menor que 3,4x é completado pela ampliação digital", () => {
   const src = fs.readFileSync(HTML, "utf8");
   okv(src.includes("digitalFalta"), "o zoom precisa calcular o complemento digital");
-  okv(/max>=ZOOM\)\?"":\("scale/.test(src) || src.includes('(zNativo&&max>=ZOOM)?"":'), "com zoom nativo suficiente não aplica transform");
+  okv(src.includes('(zNativo&&max>=ZOOMATUAL)?"":'), "com zoom nativo suficiente não aplica transform");
 });
 t("6.1 diagnóstico da câmera fica salvo no aparelho e é legível", () =>
   adminPronto(novo()).then((env) => {
