@@ -2,7 +2,7 @@
 
 **Projeto:** MDO Estoque (`Ricardinhuuuu/estoque-armacoesmdo`)
 **Branch:** `camera-correcoes-diagnostico` (sobre `secao10-2-3-operador-parados`, PR #9)
-**Testes:** **128 passando, 0 falhando** (4 novos)
+**Testes:** **131 passando, 0 falhando** (7 novos)
 
 Comecei pela câmera, como você pediu. Antes de você testar no celular, corrigi três coisas e criei uma
 medição que mostra, sem adivinhar, o que cada aparelho consegue fazer.
@@ -43,6 +43,34 @@ Leitor: nativo · zoom de câmera: 2.0x · ampliação digital: 1.7x · leituras
 Sem uso, o cartão diz **“A câmera ainda não foi usada neste aparelho.”** — nunca inventa dado.
 
 O diagnóstico fica **no aparelho** (`mdo_camdiag`), não vai para o servidor.
+
+## 4. Texto do diagnóstico para copiar e enviar
+
+O cartão mostra o **nome do aparelho** (ex.: `iPhone · Safari`, `Android 13 · Chrome`) e tem o botão
+**📋 Copiar diagnóstico**, que copia um texto pronto para colar no WhatsApp e me mandar:
+
+```
+📷 MDO Estoque — diagnóstico da câmera
+Aparelho: iPhone · Safari
+Leitor: biblioteca
+zoom de câmera: não exposto
+ampliação digital: 3.4x
+leituras: 5
+não lidas: 1
+último uso: 18/02/2026 14:32
+```
+
+Se o navegador não permitir copiar, o texto aparece numa janela para você copiar à mão. Nada é enviado
+sozinho para lugar nenhum.
+
+## 5. Relatórios em CSV
+
+Na aba **Admin › 📊 Relatórios** agora existe o cartão **⬇ Salvar os relatórios**:
+
+- Resumo do período · Mais movimentados · Por operador · Sem movimentação · **Tudo num arquivo**
+- Arquivo com **ponto e vírgula**, que é o que o Excel em português espera (abre direto, sem configurar)
+- Cada exportação fica registrada na auditoria
+- **Só o administrador** vê e exporta relatórios — o operador tem o cartão vazio
 
 ---
 
