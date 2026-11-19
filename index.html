@@ -1229,6 +1229,8 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
   '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
+ h+='<div class="card"><h3>📷 Diagnóstico da câmera</h3><div class="mu" id="camD">'+esc(camDiagTexto())+'</div>'+
+  '<button type="button" class="btn ghost" data-a="camZerar">🔄 Recomeçar medição da câmera</button></div>';
  h+='<div id="parCard"></div>';
  h+='<div id="opRel"></div>';
  h+='<div id="pbi"></div>';
@@ -1262,6 +1264,10 @@ async function act(a,i){
    if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
    audit("CONTA SERVIDOR",i,acaoMap[a]);act("ctListar");
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
+ if(a==="camZerar"){
+  CAMDIAG.aparelho="";CAMDIAG.leitor="";CAMDIAG.zoomMax=0;CAMDIAG.digital=0;CAMDIAG.lidas=0;CAMDIAG.falhas=0;CAMDIAG.ultima=0;
+  camDiagSalvar();audit("DIAGNÓSTICO DA CÂMERA","zerado");
+  const el=$("camD");if(el)el.textContent=camDiagTexto();return}
  if(a==="invIni"){invIniciar();return}
  if(a==="invFim"){invConcluir();return}
  if(a==="invHist"){
@@ -1383,9 +1389,27 @@ function camErr(e){const n=(e&&e.name)||String(e);
  if(n==="SecurityError"||!window.isSecureContext)return"A câmera só funciona em página segura (https). Abra pelo link https do app.";
  return"Não foi possível abrir a câmera ("+n+"). Toque de novo, ou use a foto/digite abaixo."}
 /* Leitura ao vivo: cada código só é aceito de novo depois de sair da faixa (evita repetir sem querer) */
+/* ===== ETAPA 6.1 — diagnóstico da câmera, gravado no próprio aparelho =====
+   Serve para o administrador saber, sem adivinhar, o que o aparelho conseguiu fazer:
+   leitor usado, zoom de câmera disponível, se o digital completou e quantas leituras deram certo. */
+const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0};
+function camDiagSalvar(){CAMDIAG.ultima=Date.now();try{localStorage.setItem("mdo_camdiag",JSON.stringify(CAMDIAG))}catch(e){}}
+function camDiagLer(){return ls("mdo_camdiag",null)}
+function camDiagTexto(){
+ const d=camDiagLer();
+ if(!d)return "A câmera ainda não foi usada neste aparelho.";
+ return "Leitor: "+(d.leitor||"—")+" · zoom de câmera: "+(d.zoomMax>1?d.zoomMax.toFixed(1)+"x":"não exposto")+
+  " · ampliação digital: "+(d.digital>1?d.digital.toFixed(1)+"x":"não usada")+" · leituras: "+d.lidas+
+  " · não lidas: "+d.falhas+(d.ultima?" · último uso: "+fmt(d.ultima):"");
+}
+/* confiança da última leitura feita pelo leitor nativo (null quando o leitor não informa) */
+let ultimaConf=null;
+/* (b) troca de código muito rápida costuma ser leitura errada: só aceita se a confiança for boa */
 const dedupe=t=>{const agora=Date.now();const c=String(t);
+ const fraca=ultimaConf!=null&&ultimaConf<0.5;
  if(c===last){if(agora-lastT<1500)return false;lastT=agora;scan(c);return true}
- last=c;lastT=agora;scan(c);return true};
+ if(last&&agora-lastT<350&&fraca)return false;   /* leitura duvidosa logo depois de outra: ignora */
+ last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);return true};
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
@@ -1400,15 +1424,18 @@ async function aplicarZoom(stream,box){
  const v=box&&box.querySelector("video");
  const zNativo=max>1;
  const digital=!zNativo||max<ZOOM;   // o digital completa o que a lente não alcança
+ /* quanto o zoom de câmera cobriu; o digital (transform) completa o resto */
+ const nativoAplicado=zNativo?Math.min(ZOOM,max):1;
+ const digitalFalta=Math.max(1,ZOOM/nativoAplicado);
  if(v){
   v.style.transformOrigin="50% 50%";
-  if(zNativo){v.style.transform="";}
-  else{v.style.transform="scale("+ZOOM+")";}
+  /* ETAPA 6.1: com zoom de câmera menor que 3,4x, o digital completa (antes a imagem ficava sem) */
+  v.style.transform=(zNativo&&max>=ZOOM)?"":("scale("+digitalFalta+")");
  }
  if(!zNativo)zoomAviso("Zoom 3,4x por ampliação digital (este aparelho não expõe zoom de câmera).");
  else if(max<ZOOM)zoomAviso("Zoom de câmera até "+max.toFixed(1)+"x; o restante até 3,4x é ampliação digital.");
  else zoomAviso("");
- return{nativo:zNativo,max,digital}
+ return{nativo:zNativo,max,digital,digitalFalta,nativoAplicado}
 }
 function addLaser(box){if(box.querySelector("#lz"))return;const z=document.createElement("div");z.id="lz";z.innerHTML='<div class="ln"></div>';box.appendChild(z)}
 async function focusCont(track){try{const c=track.getCapabilities&&track.getCapabilities();if(c&&c.focusMode&&c.focusMode.includes("continuous"))await track.applyConstraints({advanced:[{focusMode:"continuous"}]})}catch(e){}}
@@ -1423,8 +1450,8 @@ async function startNative(box,f){
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
  let on=true;
- (async()=>{while(on){try{if(v.readyState>=2){const r=await det.detect(v);if(r.length)dedupe(String(r[0].rawValue))}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
- return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""},zoom:z}}
+ (async()=>{while(on){try{if(v.readyState>=2){const r=await det.detect(v);if(r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
+ return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""},zoom:z,mdoLeitor:"nativo",mdoZoom:z}}
 /* Motor 2 (iPhone/Safari e demais): biblioteca html5-qrcode */
 async function startLib(box){
  const F=Html5QrcodeSupportedFormats,o={verbose:false,formatsToSupport:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
@@ -1449,6 +1476,7 @@ async function startLib(box){
   }
  }catch(e){}
  q.mdoZoom=z;
+ q.mdoLeitor="biblioteca";
  return q}
 $("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");last="";lastT=0;
  if(sc)return camOff();
@@ -1462,6 +1490,12 @@ $("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");las
    try{await loadLib("qr")}catch(e){throw{name:"LibFail"}}
    sc=await startLib(box)}
   addLaser(box);
+  /* registra o que este aparelho realmente conseguiu */
+  CAMDIAG.leitor=(sc&&sc.mdoLeitor)||(nf?"nativo":"biblioteca");
+  const zz=(sc&&sc.mdoZoom)||null;
+  CAMDIAG.zoomMax=zz?Number(zz.max)||0:0;
+  CAMDIAG.digital=zz?Number(zz.digitalFalta)||1:1;
+  camDiagSalvar();
   msg.textContent="✅ Câmera ativa! Deixe o código dentro da faixa verde, a uns 10–15 cm."+(msg.dataset.zoom?" "+msg.dataset.zoom:"");$("camBtn").textContent="⏹ Desligar câmera";
  }catch(e){try{if(sc)await sc.stop()}catch(x){}sc=null;box.innerHTML="";box.style.display="none";
   msg.textContent=(e&&e.name==="LibFail")?"Não consegui carregar o leitor (internet fraca ou bloqueada). Toque em 'Ligar câmera' de novo, use a foto ou digite abaixo.":camErr(e)}
@@ -1475,8 +1509,8 @@ $("ph").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)ret
   if(nf){try{const bmp=await createImageBitmap(f),r=await new BarcodeDetector({formats:nf}).detect(bmp);bmp.close&&bmp.close();if(r.length){msg.textContent="";return scan(String(r[0].rawValue))}}catch(x){}}
   try{await loadLib("qr")}catch(x){msg.textContent="";beep(false);return alert("Leitor não carregou (sem internet?). Use a câmera ao vivo ou digite o código.")}
   leitor=new Html5Qrcode("hid",{verbose:false});
-  const t=await leitor.scanFile(f,false);msg.textContent="";scan(String(t))}
- catch(x){beep(false);msg.textContent="Não consegui ler o código na foto. Chegue mais perto, com boa luz, ou digite abaixo."}
+  const t=await leitor.scanFile(f,false);msg.textContent="";CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(String(t))}
+ catch(x){beep(false);CAMDIAG.falhas=(CAMDIAG.falhas||0)+1;camDiagSalvar();msg.textContent="Não consegui ler o código na foto. Chegue mais perto, com boa luz, ou digite abaixo."}
  finally{ if(leitor){try{await leitor.clear()}catch(x){}}
   const h=$("hid");if(h)h.innerHTML="" }};
 /* ===== Seção 10.1 — Cadastro de produto a partir da foto da etiqueta ===== */
