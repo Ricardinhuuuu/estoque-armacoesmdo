@@ -153,7 +153,18 @@ const ls=(k,d)=>{try{const v=localStorage.getItem(k);if(v!=null)return JSON.pars
 const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const fmt=ts=>new Date(ts).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"medium"});
 const avKey="mdo_av";
-async function H(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("mdo|"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=5381;for(const ch of "mdo|"+s)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
+async function H(s){
+ const dados="mdo|"+s;
+ /* 1) navegador com HTTPS: SHA-256 de verdade */
+ try{
+  if(crypto&&crypto.subtle&&crypto.subtle.digest){
+   const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(dados));
+   return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+  }
+ }catch(e){}
+ /* 2) HTTP simples (sem crypto.subtle) ou navegador antigo: reserva determinística.
+    Só o modo local usa isto; com servidor, a senha é conferida por PBKDF2 no servidor. */
+ {let h=5381;for(const ch of dados)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
 const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess",cads:"mdo_cads",invh:"mdo_invh"};
 const KV={}; /* última gravação de cada chave: mantém as leituras coerentes mesmo sem armazenamento */
