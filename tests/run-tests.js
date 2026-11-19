@@ -300,7 +300,8 @@ pendentes.push(ta("gravação só reescreve a chave alterada", async () => {
   run(env, 'mode="out";scan("80202500146")');
   /* mdo_m = movimentação; mdo_fila = operação pendente de confirmação (Etapa 3);
      mdo_ap = identificador do aparelho, gravado uma única vez */
-  eq(escritas.sort(), ["mdo_ap", "mdo_aud", "mdo_fila", "mdo_m"], "chaves escritas numa bipada:");
+  /* mdo_av entra a partir da Etapa 5: o alerta de estoque é gravado quando a bipada muda a situação */
+  eq(escritas.sort(), ["mdo_ap", "mdo_aud", "mdo_av", "mdo_fila", "mdo_m"], "chaves escritas numa bipada:");
   eq(escritas.filter((k) => k === "mdo_m").length, 1, "mdo_m deve ser gravado uma vez:");
 }));
 pendentes.push(ta("dedupe aceita dois códigos diferentes em sequência", async () => {
@@ -465,6 +466,17 @@ function adminPronto(env) {
       e.diagnostico = run(env, `({U:U.map(u=>u.l),alerts:(typeof window!=="undefined"&&window.__alerts)||null})`);
       throw e;
     }
+    return env;
+  });
+}
+/* entra como operador (não administrador) e espera o login assíncrono terminar */
+function operadorPronto(env) {
+  return adminPronto(env).then(async () => {
+    run(env, `(()=>{
+      U.push({l:"ana",n:"Ana Souza",r:"operador",h:U[0].h,st:"ativo",ts:Date.now()});
+      sU();cur=U[U.length-1];$("who").textContent="👤 Ana";$("tAdm").style.display="none";
+    })()`);
+    for (let i = 0; i < 5 && run(env, "isA()"); i++) await flush();
     return env;
   });
 }
@@ -931,6 +943,210 @@ t("4.4 senha provisória sugerida é legível e diferente", () => {
   okv(a !== b, "duas senhas não podem sair iguais");
   eq(/[0-9]/.test(a), true, "precisa de número:");
 });
+
+/* ================= ETAPA 5 — PAINEL, HISTÓRICO, RELATÓRIOS, INVENTÁRIO, ALERTAS E POWER BI ================= */
+g("Etapa 5 — painel, histórico, relatórios, inventário, alertas e Power BI");
+t("7.2 painel calcula tudo dos dados reais", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const d=painelDados();
+      const b=bal();
+      return {d, prod:PP.length, soma:b.reduce((a,v)=>a+v,0), zer:b.filter(v=>v<=0).length};
+    })()`);
+    eq(r.d.produtos, r.prod, "total de produtos:");
+    eq(r.d.unidades, r.soma, "unidades em estoque:");
+    eq(r.d.zerado, r.zer, "zerados:");
+    okv(r.d.entradas === 0 && r.d.saidas === 0, "sem movimentação hoje as entradas/saídas começam em zero");
+  }));
+t("7.2 indicador abre a lista correspondente", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      painelVer("zerado");
+      const lista=$("lst").innerHTML;
+      const zerados=PP.map((p,i)=>[p,bal()[i]]).filter(([p,v])=>v<=0).length;
+      return {lista, zerados};
+    })()`);
+    if (r.zerados) okv(r.lista.includes("item"), "a lista de zerados deveria ter itens");
+    else okv(r.lista.includes("Nada nesta lista"), "sem zerados deve avisar");
+  }));
+t("7.3 histórico filtra por tipo, período e texto", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      mode="in";last="";lastT=0;scan(PP[1][0]);
+      HF.q="";HF.t="";HF.dias=0;
+      const todos=histFiltrado().length;
+      HF.t="in";const entradas=histFiltrado();
+      HF.t="";HF.q=PP[1][0];const porCodigo=histFiltrado();
+      HF.q="";HF.t="out";const saidas=histFiltrado().length;
+      return {todos, entradas:entradas.length, tipos:entradas.map(m=>m.t), porCodigo:porCodigo.length, saidas};
+    })()`);
+    eq(r.todos, 2, "todas as movimentações:");
+    eq(r.entradas, 1, "só entradas:");
+    eq(r.tipos, ["in"], "tipo filtrado:");
+    eq(r.porCodigo, 1, "busca por código:");
+    eq(r.saidas, 1, "só saídas:");
+  }));
+t("7.3 histórico é cronológico (mais recente primeiro)", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      mode="out";last="";lastT=0;scan(PP[1][0]);
+      const L=histFiltrado();
+      return L.map(m=>m.ts);
+    })()`);
+    okv(r[0] >= r[r.length - 1], "o primeiro deve ser o mais recente");
+  }));
+t("7.3 operador só vê o próprio histórico", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      M.push({id:"deOutro",t:"out",c:PP[0][0],q:1,o:"Outro",u:"outro",ts:Date.now()});
+      M.push({id:"meu",t:"in",c:PP[0][0],q:1,o:cur.n,u:cur.l,ts:Date.now()});
+      return histFiltrado().map(m=>m.id);
+    })()`);
+    eq(r.includes("deOutro"), false, "movimentação de outro operador não pode aparecer:");
+    eq(r.includes("meu"), true, "a própria deve aparecer:");
+  }));
+t("7.4 relatório usa dados reais do período", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      REL.dias=30;
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const d=relDados();
+      return {saidas:d.saidas, produtos:d.produtos.length, operadores:d.operadores.length, semMov:d.semMov.length, total:PP.length};
+    })()`);
+    eq(r.saidas, 1, "saídas do período:");
+    okv(r.produtos >= 1, "deve haver produto movimentado");
+    okv(r.operadores >= 1, "deve haver operador");
+    eq(r.semMov, r.total - 1, "produtos sem movimentação:");
+  }));
+t("7.4 período sem movimentação mostra vazio, não estima", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      REL.dias=1;
+      const d=relDados();
+      return {saidas:d.saidas, entradas:d.entradas, produtos:d.produtos.length};
+    })()`);
+    eq(r.saidas, 0, "sem movimentação hoje:");
+    eq(r.produtos, 0, "não pode inventar produto:");
+  }));
+t("7.1 inventário registra responsável, contado, sistema e diferença", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      INV={ativo:true,resp:"Ana Souza",ini:Date.now(),itens:{},hist:[]};
+      mode="cnt";last="";lastT=0;scan(PP[0][0]);scan(PP[0][0]);
+      const res=invResumo();
+      const b=bal();
+      return {res, sistema:b[0], qtd:INV.itens[PP[0][0]]};
+    })()`);
+    eq(r.qtd, 2, "contagem de duas bipadas:");
+    eq(r.res[0].contado, 2, "contado:");
+    eq(r.res[0].sistema, r.sistema, "quantidade no sistema:");
+    eq(r.res[0].dif, 2 - r.sistema, "diferença:");
+  }));
+t("7.1 concluir inventário não altera o estoque sozinho", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=JSON.stringify(bal());
+      INV={ativo:true,resp:"Ana Souza",ini:Date.now(),itens:{},hist:[]};
+      mode="cnt";last="";lastT=0;scan(PP[0][0]);
+      invConcluir();
+      const hist=ls("mdo_invh",[]);
+      const bruto=typeof localStorage!=="undefined"?localStorage.getItem("mdo_invh"):"?";
+      return {antes, depois:JSON.stringify(bal()), hist:hist.length, ativo:INV.ativo, cnt:Object.keys(INV.itens||{}).length, inv:JSON.stringify(INV), cntAll:JSON.stringify(CNT), bruto};
+    })()`);
+    eq(r.depois, r.antes, "o estoque não pode mudar ao concluir:");
+    eq(r.hist, 1, "o inventário deve ficar no histórico: " + JSON.stringify({ bruto: r.bruto, cnt: r.cntAll }));
+    eq(r.ativo, false, "o inventário termina:");
+  }));
+t("7.1 operador não inicia inventário", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{const antes=JSON.stringify(INV);invIniciar();return {antes, depois:JSON.stringify(INV), toasts:0};})()`);
+    eq(r.depois, r.antes, "operador não pode iniciar inventário:");
+  }));
+t("7.5 alerta de estoque zerado sem repetir no mesmo dia", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const b=bal();
+      const i=PP.findIndex((p,k)=>b[k]>0);
+      MIN[PP[i][0]]=0;
+      /* tira todo o saldo do produto de uma vez (o admin pode confirmar saldo insuficiente) */
+      M.push({id:"zera",t:"out",c:PP[i][0],q:b[i],o:cur.n,u:cur.l,ts:Date.now()});
+      sM();
+      const primeiro=alertas();
+      const segundo=alertas();
+      const av=ls("mdo_av",[]);
+      return {primeiro, segundo, zerado:av.filter(a=>/Estoque zerado/.test(a.m)).length};
+    })()`);
+    okv(r.primeiro >= 1, "deveria avisar do estoque zerado");
+    eq(r.segundo, 0, "não pode repetir o mesmo aviso no mesmo dia:");
+    eq(r.zerado, 1, "um aviso por produto zerado:");
+  }));
+t("7.5 alerta de estoque baixo respeita o mínimo", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const b=bal(),i=0;
+      MIN[PP[i][0]]=b[i];
+      const n=alertas();
+      const av=ls("mdo_av",[]);
+      return {n, baixo:av.filter(a=>/Estoque baixo/.test(a.m)).length};
+    })()`);
+    okv(r.baixo >= 1, "deveria avisar do estoque baixo");
+  }));
+t("7.6 relatório Power BI só abre para administrador", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=$("pbi").innerHTML;
+      drawPbi();
+      return {antes, depois:$("pbi").innerHTML, admin:isA()};
+    })()`);
+    eq(r.admin, false, "não é administrador");
+    eq(r.depois, "", "operador não pode ter conteúdo no relatório:");
+  }));
+t("7.6 filtros do Power BI cruzam com a tabela de detalhe", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      mode="in";last="";lastT=0;scan(PP[1][0]);
+      PBI.periodo=30;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;
+      const todos=pbiDados().movs.length;
+      PBI.tipo="in";const entradas=pbiDados().movs;
+      PBI.tipo="";PBI.cruz={tipo:"dia",v:new Date().toISOString().slice(0,10)};
+      const cruzado=pbiDados().movs.length;
+      PBI.cruz={tipo:"produto",v:PP[0][0]};
+      const porProduto=pbiDados().movs;
+      return {todos, entradas:entradas.length, tipos:entradas.map(m=>m.t), cruzado, porProduto:porProduto.length};
+    })()`);
+    eq(r.todos, 2, "sem filtro:");
+    eq(r.entradas, 1, "só entradas:");
+    eq(r.tipos, ["in"], "tipo:");
+    eq(r.cruzado, 2, "filtro por dia:");
+    eq(r.porProduto, 1, "filtro cruzado por produto:");
+  }));
+t("7.6 números do relatório batem com o histórico", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      mode="in";last="";lastT=0;scan(PP[1][0]);
+      PBI.periodo=30;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;
+      HF.q="";HF.t="";HF.dias=0;
+      const pbi=pbiDados().movs.length;
+      const hist=histFiltrado().length;
+      return {pbi, hist};
+    })()`);
+    eq(r.pbi, r.hist, "o recorte do relatório deve conferir com o histórico");
+  }));
+t("7.6 relatório não altera estoque", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const antes=JSON.stringify({b:bal(),m:M.length});
+      PBI.periodo=1;PBI.tipo="out";drawPbi();pbiDados();
+      PBI.cruz={tipo:"produto",v:PP[0][0]};drawPbi();
+      return {antes, depois:JSON.stringify({b:bal(),m:M.length})};
+    })()`);
+    eq(r.depois, r.antes, "somente consulta:");
+  }));
 
 (async () => {
   await Promise.all(pendentes);
