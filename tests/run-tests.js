@@ -829,6 +829,109 @@ t("3.4 novidades de outro aparelho entram sem duplicar", () =>
     });
   }));
 
+/* ================= ETAPA 4 — CONTAS COM SEGURANÇA NO SERVIDOR ================= */
+const C = require("../api/_lib/contas.js");
+g("Etapa 4 — login, autocadastro e administração");
+t("4.1 senha não é guardada como veio e confere só com a certa", () => {
+  const h = C.criarHashSenha("segredo123");
+  okv(h.hash !== "segredo123" && h.hash.length === 64, "a senha foi guardada em claro");
+  eq(C.conferirSenha("segredo123", h), true, "senha certa:");
+  eq(C.conferirSenha("segredo124", h), false, "senha errada:");
+  const h2 = C.criarHashSenha("segredo123");
+  okv(h2.sal !== h.sal, "o sal deve ser diferente por usuário");
+  okv(h2.hash !== h.hash, "com sal diferente o hash precisa mudar");
+});
+t("4.1 login inexistente e senha errada dão a mesma mensagem", () => {
+  const semUsuario = C.tentarLogin(null, "x");
+  const u = { l: "ana", r: "operador", st: "ativo", t: 0, ...C.criarHashSenha("certa123") };
+  const errada = C.tentarLogin(u, "errada1");
+  eq(semUsuario.erro, "Login ou senha incorretos.", "login inexistente:");
+  okv(errada.erro.indexOf("Login ou senha incorretos") === 0, "senha errada deve começar igual");
+});
+t("4.2 bloqueio é decidido no servidor após 3 tentativas", () => {
+  const u = { l: "ana", r: "operador", st: "ativo", t: 0, ...C.criarHashSenha("certa123") };
+  const r1 = C.tentarLogin(u, "errada1"); eq(r1.tentativas, 1, "1ª tentativa:");
+  const r2 = C.tentarLogin({ ...u, t: 1 }, "errada1"); eq(r2.tentativas, 2, "2ª tentativa:");
+  const r3 = C.tentarLogin({ ...u, t: 2 }, "errada1");
+  eq(r3.bloquear, true, "a 3ª deve bloquear:");
+  const bloqueado = C.tentarLogin({ ...u, t: 3, st: "bloq" }, "certa123");
+  eq(bloqueado.ok, false, "bloqueado não entra nem com a senha certa:");
+  okv(bloqueado.bloqueado, "deve vir marcado como bloqueado");
+});
+t("4.2 usuário desativado não entra", () => {
+  const u = { l: "bia", r: "operador", st: "desat", t: 0, ...C.criarHashSenha("certa123") };
+  const r = C.tentarLogin(u, "certa123");
+  eq(r.ok, false, "não pode entrar:");
+  eq(r.desativado, true, "deve vir marcado como desativado:");
+});
+t("4.3 autocadastro exige nome e sobrenome e senha de 6+", () => {
+  eq(C.nomeOK("Ana"), false, "só o primeiro nome:");
+  eq(C.nomeOK("Ana Souza"), true, "nome e sobrenome:");
+  eq(C.senhaForte("12345"), false, "senha curta:");
+  eq(C.senhaForte("123456"), true, "senha de 6:");
+  eq(C.loginOK("ana souza"), false, "login com espaço:");
+  eq(C.loginOK("ana.souza"), true, "login válido:");
+});
+t("4.4 troca obrigatória da senha provisória", () => {
+  const h = C.criarHashSenha("prov1234");
+  const u = { l: "ana", r: "operador", st: "ativo", t: 0, temp: true, ...h };
+  const r = C.tentarLogin(u, "prov1234");
+  eq(r.ok, true, "entra com a provisória:");
+  eq(r.trocaObrigatoria, true, "deve exigir a troca:");
+  const pub = C.usuarioPublico(u);
+  eq(pub.h, undefined, "hash não pode aparecer:");
+  eq(pub.sal, undefined, "sal não pode aparecer:");
+  eq(pub.temp, true, "o app precisa saber que há troca pendente:");
+});
+t("4.1 o aplicativo não guarda mais a senha depois do login de servidor", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      contasAtivas=()=>true;
+      salvarSess({sessao:"tk123",usuario:{l:"ana",n:"Ana Souza",r:"operador",st:"ativo",t:0,temp:false,ts:Date.now()}});
+      const u=U.find(x=>x.l==="ana");
+      return {sess:SESS.token, guardaHash:u&&u.h, papel:u&&u.r, valida:sessValida()};
+    })()`);
+    eq(r.sess, "tk123", "token da sessão:");
+    eq(r.guardaHash, "(servidor)", "o app não deve guardar hash de senha:");
+    eq(r.papel, "operador", "papel vem do servidor:");
+    eq(r.valida, true, "sessão recém-criada precisa valer:");
+  }));
+t("4.1 sem servidor configurado o login local continua funcionando", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>({ativo:contasAtivas(),cur:!!cur,valida:sessValida()}))()`);
+    eq(r.ativo, false, "não pode estar ativo sem endereço:");
+    okv(r.cur, "deveria haver usuário local logado");
+    eq(r.valida, false, "sem servidor não existe sessão de servidor:");
+  }));
+t("4.2 sessão vencida não vale", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      contasAtivas=()=>true;
+      SESS={token:"tk",l:"ana",exp:Date.now()-1000};
+      return {valida:sessValida()};
+    })()`);
+    eq(r.valida, false, "sessão expirada não pode valer:");
+  }));
+t("4.1 painel de contas aparece quando o servidor está ligado", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=$("adm").innerHTML;
+      contasAtivas=()=>true;drawAdm();const depois=$("adm").innerHTML;
+      const botoes=$("adm").querySelectorAll("[data-l]");
+      return {temAntes:/Contas no servidor/.test(antes),temDepois:/Contas no servidor/.test(depois),botoes:botoes.length,
+              carregar:/data-a="ctListar"/.test(depois)};
+    })()`);
+    eq(r.temAntes, false, "sem servidor não deve mostrar painel de contas:");
+    eq(r.temDepois, true, "com servidor deve mostrar:");
+    okv(r.carregar, "falta o botão de carregar contas");
+  }));
+t("4.4 senha provisória sugerida é legível e diferente", () => {
+  const a = C.sugerirSenha(), b = C.sugerirSenha();
+  okv(a.length >= 8, "senha curta demais");
+  okv(a !== b, "duas senhas não podem sair iguais");
+  eq(/[0-9]/.test(a), true, "precisa de número:");
+});
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));

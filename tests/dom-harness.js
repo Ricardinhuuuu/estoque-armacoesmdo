@@ -28,6 +28,23 @@ function makeEnv(opts = {}) {
       removeChild(c) { el.children = el.children.filter((x) => x !== c); },
       remove() {}, focus() {}, click() { if (el.onclick) el.onclick({ target: el }); },
       querySelector: (s) => sel(el, s), closest: () => null, setAttribute() {}, addEventListener() {},
+      /* como no navegador: procura dentro do HTML gravado e devolve elementos clicáveis */
+      querySelectorAll(s) {
+        const attr = /^\[([a-z-]+)\]$/.exec(String(s).trim());
+        if (!attr) return [];
+        const nome = attr[1];
+        const achados = [];
+        const re = new RegExp('<button[^>]*data-' + nome + '="([^"]*)"[^>]*>', "g");
+        let m;
+        while ((m = re.exec(el._html || ""))) {
+          const b = mk("dl_" + m[1], "button");
+          b.dataset[nome.replace(/^data-/, "")] = m[1];
+          const acao = /data-a="([^"]*)"/.exec(m[0]);
+          if (acao) b.dataset.a = acao[1];
+          achados.push(b);
+        }
+        return achados;
+      },
       play: async () => {}, getCapabilities: () => ({}), applyConstraints: async () => {},
       width: 0, height: 0,
       toDataURL: () => "data:image/png;base64,AAA",
