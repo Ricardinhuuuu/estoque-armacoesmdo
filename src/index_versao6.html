@@ -89,7 +89,8 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="row" style="align-items:center;justify-content:space-between"><span class="mu">Quantidade por bipada</span><div class="qty"><button id="qm">−</button><b id="qv">1</b><button id="qp">+</button></div></div>
 <button class="btn" id="camBtn" style="margin-top:12px">📷 Ligar câmera (Leitura Automática)</button>
 <div id="camW"><div id="cam"></div><div id="gl"></div></div><div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
-<button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button><input type="file" id="ph" accept="image/*" capture="environment" hidden>
+<button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button>
+<button class="btn ghost" id="cadPho" style="margin-top:8px">🏷 Cadastrar produto por foto da etiqueta</button><input type="file" id="cadPh" accept="image/*" capture="environment" hidden><input type="file" id="ph" accept="image/*" capture="environment" hidden>
 <div class="row"><input id="man" placeholder="Ou digite/bipe o código aqui" enterkeyhint="done"><button class="btn" id="go" style="width:auto">OK</button></div></div>
 <div id="res" class="card res"><div class="mu">Aguardando a primeira bipada…</div></div>
 <button class="btn ghost" id="undo">↩ Desfazer última bipada</button>
@@ -137,7 +138,7 @@ const fmt=ts=>new Date(ts).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"
 const avKey="mdo_av";
 async function H(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("mdo|"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=5381;for(const ch of "mdo|"+s)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
-const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess"};
+const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess",cads:"mdo_cads",invh:"mdo_invh"};
 const KV={}; /* última gravação de cada chave: mantém as leituras coerentes mesmo sem armazenamento */
 const sP=(k,v)=>{try{KV[k]=JSON.stringify(v);localStorage.setItem(K[k],JSON.stringify(v))}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true)}};
 const sM=()=>sP("m",M),sU=()=>sP("u",U),sR=()=>sP("req",REQ),sC=()=>sP("cnt",CNT),sMin=()=>sP("min",MIN);
@@ -1377,6 +1378,79 @@ $("ph").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)ret
  catch(x){beep(false);msg.textContent="Não consegui ler o código na foto. Chegue mais perto, com boa luz, ou digite abaixo."}
  finally{ if(leitor){try{await leitor.clear()}catch(x){}}
   const h=$("hid");if(h)h.innerHTML="" }};
+/* ===== Seção 10.1 — Cadastro de produto a partir da foto da etiqueta ===== */
+/* A foto serve só para descobrir o CÓDIGO. Nada de IA inventando descrição:
+   os outros campos são digitados/confirmados por uma pessoa. */
+let CAD={codigo:"",ocupado:false};
+function cadPermitido(){return isA()}
+function cadAbrir(codigo,viaFoto){
+ if(!cadPermitido())return toast("Só quem tem permissão de cadastro (administrador) pode cadastrar.",true);
+ const c=normCode(codigo);
+ if(!c)return toast("Código inválido na foto.",true);
+ CAD.codigo=c;
+ const existe=idx[c]!=null;
+ /* origem da leitura: a foto fica registrada para conferência do administrador */
+ if(viaFoto){
+  const regs=ls("mdo_cads",[]);
+  regs.push({id:uid(),codigo:c,por:cur?cur.l:"-",ts:Date.now(),jaExistia:existe});
+  const ult=regs.slice(-300);
+  try{localStorage.setItem(K.cads,JSON.stringify(ult))}catch(e){}
+  CAD.regs=ult;
+ }
+ let d="",cor="";
+ if(!existe){
+  d=prompt("Descrição do produto (modelo) para o código "+c+":","");
+  if(d===null)return;
+  d=String(d).trim().toUpperCase();
+  if(!d)return toast("Cadastro cancelado: a descrição é obrigatória.",true);
+  cor=prompt("Cor da armação:","")||"";
+  cor=String(cor).trim().toUpperCase();
+ }
+ const q0=parseInt(prompt(existe?"Esse código já está cadastrado ("+(PP[idx[c]][1]+" "+PP[idx[c]][2])+").\n\nEstoque atual: "+bal()[idx[c]]+"\n\nAjustar o estoque inicial para:":(d+" "+(cor||"")+"\n\nEstoque inicial:"),String(existe?bal()[idx[c]]:0)),10);
+ if(isNaN(q0))return toast("Cadastro cancelado.",true);
+ if(existe){
+  if(q0===bal()[idx[c]])return toast("Nada a alterar.");
+  reg("adj",c,q0-bal()[idx[c]],{obs:"Ajuste pelo cadastro por foto"});
+  audit("ESTOQUE AJUSTADO PELA FOTO",c,"novo inicial "+q0);
+  draw();return toast("Estoque de "+PP[idx[c]][1]+" ajustado para "+q0+".");
+ }
+ PP.push([c,d,cor,Math.max(0,q0)]);
+ sP("P",PP);reidx();draw();last="";
+ audit("PRODUTO CADASTRADO POR FOTO",c,d+" · "+(cor||"—"));
+ card("","<h3>✅ Produto cadastrado pela foto</h3><b>"+esc(d)+"</b><div class='mu'>Cor: "+esc(cor||"—")+" · "+esc(c)+"</div><div class='mu'>Estoque inicial</div><div class='big'>"+Math.max(0,q0)+"</div>");
+ toast("Produto cadastrado.");
+}
+/* lê o código da etiqueta na foto e abre o cadastro já com ele preenchido */
+async function cadPorFoto(f){
+ if(!f)return;
+ if(!cadPermitido())return toast("Só quem tem permissão de cadastro (administrador) pode cadastrar.",true);
+ CAD.regs=ls(K.cads,[]);
+ CAD.ocupado=true;
+ const msg=$("camMsg");msg.textContent="Lendo a etiqueta…";
+ let leitor=null,lido="";
+ try{
+  const nf=await nativeOK();
+  if(nf){try{const bmp=await createImageBitmap(f),r=await new BarcodeDetector({formats:nf}).detect(bmp);bmp.close&&bmp.close();if(r.length)lido=String(r[0].rawValue)}catch(x){}}
+  if(!lido){
+   try{await loadLib("qr")}catch(x){msg.textContent="";beep(false);return alert("Leitor não carregou (sem internet?). Digite o código no campo de cadastro.")}
+   leitor=new Html5Qrcode("hid",{verbose:false});
+   lido=String(await leitor.scanFile(f,false));
+  }
+ }catch(x){
+  beep(false);msg.textContent="Não consegui ler o código na foto. Chegue mais perto, com boa luz, ou digite o código.";
+  return;
+ }finally{
+  CAD.ocupado=false;
+  if(leitor){try{await leitor.clear()}catch(x){}}
+  const h=$("hid");if(h)h.innerHTML="";
+ }
+ const c=normCode(lido);
+ msg.textContent="";
+ if(!c)return toast("Nenhum código legível na foto.",true);
+ cadAbrir(c,true);
+}
+$("cadPho").onclick=()=>{initAudio();if(!cadPermitido())return toast("Só o administrador cadastra produto.",true);$("cadPh").click()};
+$("cadPh").onchange=e=>{const f=e.target.files[0];e.target.value="";cadPorFoto(f)};
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
