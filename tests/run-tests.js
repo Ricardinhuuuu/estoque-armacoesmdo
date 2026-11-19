@@ -661,6 +661,30 @@ t("câmera: visor mais baixo, largura inteira e botões de zoom", () => {
   okv(html.indexOf('id="zoomBar"') > html.indexOf('id="cam"'), "a barra de zoom fica abaixo do visor");
 });
 
+t("7.6 relatório: os dez cartões numéricos do topo", () => {
+  const env = novo();
+  /* admin local direto: o teste é sincrono e só precisa de isA() verdadeiro */
+  run(env, 'U=[{l:"ricardo",n:"Ricardo Kato",r:"admin",h:"x",st:"ativo"}];cur=U[0];');
+  const d = run(env, "(function(){const x=pbiDados();return JSON.stringify(x)})()");
+  const x = JSON.parse(d);
+  okv(typeof x.saldoLiquido === "number", "falta o saldo líquido");
+  okv(Array.isArray(x.semMov), "falta a lista de sem movimentação");
+  okv(typeof x.diverg === "number", "falta a contagem de divergências");
+  run(env, "drawPbi()");
+  const html = env.document.getElementById("pbi").innerHTML;
+  const n = (html.match(/class="pc/g) || []).length;
+  okv(n === 10, "o topo deve ter 10 cartões, tem " + n);
+  ["Total de produtos", "Unidades em estoque", "Saldo líquido", "Sem movimentação", "Divergências"]
+    .forEach((rot) => okv(html.indexOf(rot) >= 0, "falta o cartão: " + rot));
+});
+
+t("7.6 relatório: clicar num item do detalhe abre a movimentação individual", () => {
+  const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
+  okv(/data-a="pbiDet"/.test(html), "o item do detalhe deve abrir a movimentação");
+  okv(/Movimentação\\n/.test(html), "deve mostrar o detalhe da movimentação");
+  okv(/Aparelho: /.test(html), "o detalhe deve mostrar o aparelho");
+});
+
 t("câmera: visor ocupa a largura toda da tela enquanto a câmera roda", () => {
   const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
   okv(/body\.camLarga #camW[^{]*\{[^}]*position:fixed/.test(html), "o visor deve sair do cartão e ocupar a tela");
