@@ -36,9 +36,16 @@ module.exports = async function handler(req, res) {
   const inicio = (pagina - 1) * tamanho;
 
   try {
+    /* o índice de trecho (trigramas) acelera o ilike; se a extensão não existir, o app funciona igual */
+    await db.query(`create extension if not exists pg_trgm`).catch(() => {});
     await db.query(`create table if not exists mdo_produtos (
       codigo text primary key, descricao text, cor text, inicial integer not null default 0)`);
     await db.query(`create index if not exists mdo_prod_codigo on mdo_produtos (codigo)`);
+    /* ETAPA 6 — desempenho: os índices fazem a pesquisa por trecho e a ordenação sem varrer a tabela */
+    await db.query(`create index if not exists mdo_prod_descricao on mdo_produtos (descricao)`);
+    await db.query(`create index if not exists mdo_prod_cor on mdo_produtos (cor)`);
+    await db.query(`create index if not exists mdo_prod_desc_trgm on mdo_produtos using gin (descricao gin_trgm_ops)`).catch(() => {});
+    await db.query(`create index if not exists mdo_prod_codigo_trgm on mdo_produtos using gin (codigo gin_trgm_ops)`).catch(() => {});
 
     const filtro = q ? "where codigo ilike $1 or descricao ilike $1 or cor ilike $1" : "";
     const params = q ? [`%${q}%`] : [];
