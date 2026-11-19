@@ -30,13 +30,16 @@ function makeEnv(opts = {}) {
       querySelector: (s) => sel(el, s), closest: () => null, setAttribute() {}, addEventListener() {},
       /* como no navegador: procura dentro do HTML gravado e devolve elementos clicáveis */
       querySelectorAll(s) {
-        const attr = /^\[([a-z-]+)\]$/.exec(String(s).trim());
+        /* aceita [data-a], [data-a="x"] e prefixos como [data-a^='relCSV'] */
+        const attr = /^\[([a-z-]+)(?:\^?=\s*['"]?([^'"\]]*)['"]?)?\]$/.exec(String(s).trim());
         if (!attr) return [];
-        const nome = attr[1];
+        const nome = attr[1], filtro = attr[2];
+        const prefixo = String(s).includes("^=");
         const achados = [];
         const re = new RegExp('<button[^>]*data-' + nome + '="([^"]*)"[^>]*>', "g");
         let m;
         while ((m = re.exec(el._html || ""))) {
+          if (filtro && !(prefixo ? m[1].startsWith(filtro) : m[1] === filtro)) continue;
           const b = mk("dl_" + m[1], "button");
           b.dataset[nome.replace(/^data-/, "")] = m[1];
           const acao = /data-a="([^"]*)"/.exec(m[0]);
