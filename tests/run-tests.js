@@ -606,11 +606,12 @@ t("2.7 consulta NUNCA altera o estoque", () =>
     })()`);
     eq(r.depois, r.antes, "a consulta não pode mexer em movimentações, saldo, contagem nem pedidos:");
   }));
-t("2.7 consulta não grava nada no localStorage", () =>
+t("2.7 consulta não grava nada no localStorage, exceto o registro de leituras", () =>
   adminPronto(novo()).then((env) => {
     const antes = new Map(env.store);
     run(env, `(()=>{ qLeitura(PP[0][0]); qLeitura("8888888888888"); })()`);
-    eq([...env.store.keys()].sort(), [...antes.keys()].sort(), "chaves gravadas:");
+    const novas = [...env.store.keys()].filter((k) => !antes.has(k));
+    eq(novas, ["mdo_leit"], "a consulta só pode gravar o registro de leituras:");
     eq(env.store.get("mdo_m"), antes.get("mdo_m"), "movimentações:");
   }));
 t("2.6 produto não cadastrado mostra aviso e nada muda", () =>
@@ -1457,6 +1458,49 @@ t("operador não exporta relatório", () =>
     const r = run(env, `(()=>{drawRel();return {html:$("rel").innerHTML,admin:isA()};})()`);
     eq(r.admin, false, "não é administrador");
     eq(r.html, "", "operador não vê os relatórios:");
+  }));
+
+/* ================= SEÇÃO 9 — CONFERÊNCIA DAS LEITURAS ================= */
+g("Seção 9 — conferência das leituras");
+t("9 registro guarda código lido, origem e se encontrou o produto", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      LEIT.origem="câmera (Bipar)";
+      qLeitura(PP[0][0]);
+      LEIT.origem="foto/galeria";
+      qLeitura("9999999999999");
+      const l=leitLista();
+      return {n:l.length, primeira:l[0], segunda:l[1], resumo:leitResumo()};
+    })()`);
+    eq(r.n, 2, "as duas leituras precisam ser registradas:");
+    eq(r.primeira.achou, true, "a primeira encontrou o produto:");
+    eq(r.primeira.origem, "câmera (Bipar)", "origem da primeira:");
+    eq(r.segunda.achou, false, "a segunda não encontrou:");
+    eq(r.segunda.origem, "foto/galeria", "origem da segunda:");
+    okv(r.resumo.includes("2 leitura"), "o resumo precisa contar: " + r.resumo);
+  }));
+t("9 registro de leituras não altera estoque nem movimentações", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antesM=M.length, antesB=JSON.stringify(bal());
+      LEIT.origem="teste";qLeitura(PP[0][0]);qLeitura("7777777777777");
+      return {antesM, depoisM:M.length, mesmaConta:antesB===JSON.stringify(bal())};
+    })()`);
+    eq(r.depoisM, r.antesM, "nenhuma movimentação pode ser criada:");
+    eq(r.mesmaConta, true, "o saldo não pode mudar:");
+  }));
+t("9 leituras podem ser exportadas e limpas", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      LEIT.origem="câmera";qLeitura(PP[0][0]);
+      const antes=leitLista().length;
+      try{localStorage.removeItem("mdo_leit")}catch(e){}
+      LEIT.itens=[];
+      return {antes, depois:leitLista().length, resumo:leitResumo()};
+    })()`);
+    okv(r.antes >= 1, "precisa ter leitura antes de limpar");
+    eq(r.depois, 0, "depois de limpar não pode sobrar leitura:");
+    okv(r.resumo.includes("Nenhuma leitura"), "o resumo precisa dizer que está vazio");
   }));
 
 (async () => {
