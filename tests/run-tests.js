@@ -1424,6 +1424,41 @@ t("6.1 leitura duvidosa logo após outra não troca o código", () => {
   okv(src.includes("fraca"), "leitura de baixa confiança precisa ser tratada");
 });
 
+t("6.1 diagnóstico identifica o aparelho e pode ser copiado", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const nome=camAparelho();
+      CAMDIAG.aparelho=nome;CAMDIAG.leitor="biblioteca";CAMDIAG.zoomMax=0;CAMDIAG.digital=3.4;CAMDIAG.lidas=3;camDiagSalvar();
+      const linha=camDiagCopiar();
+      return {nome, linha};
+    })()`);
+    okv(typeof r.nome === "string" && r.nome.length > 0, "o aparelho precisa ser identificado");
+    okv(r.linha.includes("diagnóstico da câmera"), "o texto copiado precisa ter título: " + r.linha);
+    okv(r.linha.includes("Aparelho:"), "o texto copiado precisa dizer o aparelho");
+    okv(r.linha.includes("leituras"), "o texto copiado precisa trazer as leituras");
+  }));
+
+g("Relatórios — exportação em CSV");
+t("relatórios podem ser salvos em CSV pelo administrador", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      M.push({id:"r1",t:"in",c:PP[0][0],q:3,o:"Ana",u:"ana",ts:Date.now()});sM();
+      drawRel();
+      const el=$("rel"), html=String(el.innerHTML||"");
+      const btns=(html.match(/data-a="relCSV[0-9]"/g)||[]).map(x=>x.slice(8,-1));
+      return {btns, html:$("rel").innerHTML};
+    })()`);
+    eq(r.btns.length, 5, "devem existir 5 exportações:");
+    okv(r.html.includes("ponto e vírgula"), "a tela precisa explicar o separador do Excel");
+    okv(r.html.includes("Salvar os relatórios"), "o cartão de exportação precisa aparecer");
+  }));
+t("operador não exporta relatório", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{drawRel();return {html:$("rel").innerHTML,admin:isA()};})()`);
+    eq(r.admin, false, "não é administrador");
+    eq(r.html, "", "operador não vê os relatórios:");
+  }));
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
