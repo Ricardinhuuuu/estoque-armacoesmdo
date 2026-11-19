@@ -820,30 +820,74 @@ function invConcluir(){
  audit("INVENTÁRIO CONCLUÍDO","",INV.resp+" · "+r.length+" itens · "+div.length+" divergências");
  INV.ativo=false;invSalvar();drawRel();
 }
-/* 7.5 — alertas sem repetição */
+/* ===== 7.5 — Alertas e automações =====
+   Regras: nunca repetir o mesmo aviso no mesmo dia; cada alerta tem um código fixo,
+   então quando a situação melhora o aviso anterior é marcado como resolvido. */
+const ALERTAS={
+ zerado:{on:true,rot:"Produto zerado"},
+ baixo:{on:true,rot:"Estoque baixo (no mínimo)"},
+ pendente:{on:true,rot:"Movimentações pendentes de aprovação"},
+ sync:{on:true,rot:"Falhas de sincronização e operações não confirmadas"},
+ parado:{on:true,rot:"Produtos parados (sem movimentação)"},
+ inventario:{on:true,rot:"Divergências de inventário"}
+};
+/* o administrador liga e desliga cada alerta; fica salvo no aparelho */
+function alertaCfg(){const c=ls("mdo_alcfg",{});const o={};Object.keys(ALERTAS).forEach(k=>{o[k]=c[k]===undefined?ALERTAS[k].on:!!c[k]});return o}
+function alertaConfigurar(k,v){
+ /* guarda só o que o administrador mudou; o resto segue o padrão */
+ const c=ls("mdo_alcfg",{});c[k]=!!v;
+ try{localStorage.setItem("mdo_alcfg",JSON.stringify(c))}catch(e){}
+ audit("ALERTAS",k,v?"ligado":"desligado");draw();
+}
+function alertaLigado(k){return alertaCfg()[k]!==false}
 function alertas(){
  const b=bal(),av=ls(avKey,[]),hoje=new Date().toISOString().slice(0,10);
- const jaTem=m=>av.some(a=>a.m===m&&a.dia===hoje);
+ const jaTem=(m,cod)=>av.some(a=>a.dia===hoje&&(cod?a.cod===cod:a.m===m));
  const novos=[];
+ const push=(cod,m,extra)=>{if(!alertaLigado(cod))return;if(!jaTem(m,cod))novos.push(Object.assign({m,cod},extra||{}))};
  PP.forEach((p,i)=>{
   const v=b[i],mn=MIN[p[0]]||0;
-  if(v<=0){const m="Estoque zerado: "+p[1]+" "+p[2];if(!jaTem(m))novos.push(m)}
-  else if(mn&&v<=mn){const m="Estoque baixo: "+p[1]+" "+p[2]+" ("+v+", mín. "+mn+")";if(!jaTem(m))novos.push(m)}
+  if(v<=0)push("zerado","Estoque zerado: "+p[1]+" "+p[2],{alvo:p[0]});
+  else if(mn&&v<=mn)push("baixo","Estoque baixo: "+p[1]+" "+p[2]+" ("+v+", mín. "+mn+")",{alvo:p[0]});
  });
- if(FILA.length){const m="Falha de sincronização: "+FILA.length+" operação(ões) não confirmada(s)";if(!jaTem(m))novos.push(m)}
- if(REQ.length){const m="Movimentações pendentes de aprovação: "+REQ.length;if(!jaTem(m))novos.push(m)}
+ if(FILA.length)push("sync","Falha de sincronização: "+FILA.length+" operação(ões) não confirmada(s)");
+ if(REQ.length)push("pendente","Movimentações pendentes de aprovação: "+REQ.length);
  /* 10.3 — produto sem movimentação, no período que o administrador escolheu */
  const diasParado=paradoDias();
  if(diasParado){
   const p=parados(diasParado);
-  if(p.length){const m="Produtos sem movimentação há "+diasParado+" dias: "+p.length;if(!jaTem(m))novos.push(m)}
+  if(p.length)push("parado","Produtos sem movimentação há "+diasParado+" dias: "+p.length);
  }
- novos.forEach(m=>{
-  av.push({id:uid(),m,ts:Date.now(),lido:false,dia:hoje});
+ /* 7.5 — divergências de inventário: contagens concluídas com diferença */
+ const invh=ls("mdo_invh",[]);
+ const ultimo=invh[invh.length-1];
+ if(ultimo){
+  const div=(ultimo.itens||[]).filter(x=>x.dif!==0).length;
+  if(div)push("inventario","Divergências de inventário: "+div+" produto(s) com diferença no inventário de "+ultimo.resp,{alvo:"inv"});
+ }
+ novos.forEach(n=>{
+  av.push(Object.assign({id:uid(),m:n.m,ts:Date.now(),lido:false,dia:hoje},n.cod?{cod:n.cod}:{},n.alvo?{alvo:n.alvo}:{}));
  });
- if(novos.length){sAv(av);if(isA())toast(novos[0]+(novos.length>1?" (+"+(novos.length-1)+")":""))}
+ /* reposição resolve o alerta: aviso de estoque do mesmo produto deixa de valer */
+ const codsResolvidos=new Set();
+ PP.forEach((p,i)=>{
+  const v=b[i],mn=MIN[p[0]]||0;
+  if(!(v<=0)&&!(mn&&v<=mn))codsResolvidos.add(p[0]);
+ });
+ let mudou=false;
+ av.forEach(a=>{
+  if(a.resolvido)return;
+  if(a.cod==="zerado"||a.cod==="baixo"){
+   if(a.alvo&&codsResolvidos.has(a.alvo)){a.resolvido=true;mudou=true}
+  }
+  if(a.cod==="pendente"&&!REQ.length){a.resolvido=true;mudou=true}
+  if(a.cod==="sync"&&!FILA.length){a.resolvido=true;mudou=true}
+ });
+ if(novos.length||mudou){sAv(av);if(novos.length&&isA())toast(novos[0].m+(novos.length>1?" (+"+(novos.length-1)+")":""))}
  return novos.length;
 }
+/* lista dos alertas ainda válidos (os resolvidos continuam no histórico, mas não incomodam) */
+function alertasAbertos(){return ls(avKey,[]).filter(a=>!a.resolvido)}
 /* 7.6 — Relatório estilo Power BI: só administrador, somente leitura, dados reais */
 const PBI={periodo:30,tipo:"",operador:"",modelo:"",cor:"",cruz:null};
 function pbiBase(){
@@ -1366,7 +1410,17 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  (cn.length?'<button type="button" class="btn" data-a="ap">Aplicar ajustes ao estoque</button><button type="button" class="btn ghost" data-a="cc">Limpar contagem</button>':'')+
  (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
  h+='<div class="card"><h3>🕵 Auditoria (últimos 30)</h3>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></div>';
- h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){const av=ls(avKey,[]).filter(a=>a.lido!==true);return av.map((a,i)=>'<div class="item"><span><b>'+esc(a.m)+'</b><span class="mu">'+fmt(a.ts)+'</span></span><button type="button" class="pill" data-a="av" data-i="'+i+'">Marcar lido</button></div>').join("")||'<div class="mu">Nenhum aviso pendente.</div>'})())+'</div>';
+ h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){
+   const todos=ls(avKey,[]),av=todos.filter(a=>a.lido!==true&&!a.resolvido);
+   const resolvidos=todos.filter(a=>a.resolvido&&a.lido!==true).length;
+   return av.map((a,i)=>'<div class="item"><span><b>'+esc(a.m)+'</b><span class="mu">'+fmt(a.ts)+'</span></span><button type="button" class="pill" data-a="av" data-i="'+i+'">Marcar lido</button></div>').join("")||'<div class="mu">Nenhum aviso pendente.</div>'
+    +(resolvidos?'<div class="mu" style="margin-top:6px">'+resolvidos+' aviso(s) já resolvido(s) pela reposição ou pela sincronização.</div>':'');
+ })())+'</div>';
+ /* 7.5 — o administrador escolhe quais alertas quer receber */
+ h+='<div class="card"><h3>⚙️ Quais alertas avisar</h3><div class="mu">Desligar um alerta para de criar avisos novos. Os avisos antigos ficam no histórico.</div>'+
+  Object.keys(ALERTAS).map(k=>{const on=alertaLigado(k);
+   return '<div class="item"><span><b>'+esc(ALERTAS[k].rot)+'</b><span class="mu">'+(on?"ligado":"desligado")+'</span></span>'+
+    '<button type="button" class="pill" data-a="alCfg" data-i="'+k+'" data-v="'+(on?"0":"1")+'">'+(on?"Desligar":"Ligar")+'</button></div>'}).join("")+'</div>';
  if(contasAtivas())h+='<div class="card"><h3>👥 Contas no servidor</h3><div class="mu" id="ctS">'+(sessValida()?"Sessão válida — o servidor decide papel e bloqueio.":"Sem sessão de servidor: entre novamente para administrar contas.")+'</div>'+
   '<button type="button" class="btn" data-a="ctListar">🔄 Carregar contas do servidor</button>'+
   '<div id="ctL"></div></div>';
@@ -1472,7 +1526,8 @@ async function act(a,i){
   audit("INVENTÁRIO",n+" ajuste(s)",desc?desc+" código(s) fora do catálogo descartado(s)":"");CNT={};sC();
   if(desc)alert(desc+" código(s) contado(s) não existem mais no catálogo e foram descartados.")}
  else if(a==="cc"){CNT={};sC()}
- else if(a==="av"){const av=ls(avKey,[]);const v=av.filter(x=>!x.lido)[i];if(v)v.lido=true;sAv(av)}
+ else if(a==="alCfg"){alertaConfigurar(i,String(b.dataset.v)==="1");return}
+ else if(a==="av"){const av=ls(avKey,[]);const v=av.filter(x=>!x.lido&&!x.resolvido)[i];if(v)v.lido=true;sAv(av);draw()}
  else if(a==="imp")return $("imp").click();
  else if(a==="bi")return $("bkI").click();
  else if(a==="bk")return backup();
