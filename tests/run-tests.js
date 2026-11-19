@@ -1229,6 +1229,58 @@ t("6.4 publicação: rotas da API existem e são funções serverless", () => {
   });
 });
 
+/* ================= SEÇÃO 10.1 — CADASTRO POR FOTO ================= */
+g("Seção 10.1 — cadastro de produto pela foto da etiqueta");
+t("10.1 código lido na foto abre o cadastro já preenchido", () =>
+  adminPronto(novo()).then((env) => {
+    const antes = run(env, "PP.length");
+    const r = run(env, `(()=>{
+      const respostas=["RX NOVO MODELO","AZUL","2"];
+      window.prompt=(m,d)=>(respostas.length?respostas.shift():null);
+      cadAbrir("80202599999",true);
+      const i=idx["80202599999"];
+      return {i, prod:i==null?null:PP[i], bal:i==null?null:bal()[i], registros:ls("mdo_cads",[]).length, restam:respostas.length};
+    })()`);
+    okv(r.i != null, "o produto deveria existir depois do cadastro");
+    eq(r.prod[1], "RX NOVO MODELO", "descrição digitada pela pessoa:");
+    eq(r.prod[2], "AZUL", "cor digitada:");
+    eq(r.bal, 2, "estoque inicial:");
+    eq(r.registros, 1, "a leitura precisa ficar registrada:");
+  }));
+t("10.1 código já cadastrado não duplica o produto", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const c=PP[0][0], antes=PP.length, b=bal()[0];
+      const respostas=["3"];
+      window.prompt=()=>(respostas.shift()===undefined?null:respostas);
+      window.prompt=(m,d)=>respostas.length?respostas.shift():null;
+      cadAbrir(c);
+      return {antes, depois:PP.length, bal:bal()[0], b};
+    })()`);
+    eq(r.depois, r.antes, "não pode criar produto repetido:");
+    eq(r.bal, 3, "o estoque deve ser ajustado para o valor confirmado:");
+  }));
+t("10.1 operador não cadastra produto pela foto", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=PP.length;
+      cadAbrir("80202599998");
+      return {antes, depois:PP.length, permitido:cadPermitido()};
+    })()`);
+    eq(r.permitido, false, "operador não tem permissão de cadastro:");
+    eq(r.depois, r.antes, "nenhum produto pode ser criado pelo operador:");
+  }));
+t("10.1 nenhuma descrição é inventada: campo vazio cancela o cadastro", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=PP.length;
+      window.prompt=(m,d)=>{ if(String(m).indexOf("Descrição")>=0) return "   "; return "1"; };
+      cadAbrir("80202599997");
+      return {antes, depois:PP.length};
+    })()`);
+    eq(r.depois, r.antes, "sem descrição digitada o produto não pode ser criado:");
+  }));
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
