@@ -21,9 +21,10 @@ mdo-estoque/
 ├── docs/
 │   ├── ETAPA0_DIAGNOSTICO.md        # Diagnóstico técnico: backend, banco, riscos, plano de backup
 │   ├── ETAPA1_CAMERA.md             # Câmera: zoom 3,4x, desempenho, biblioteca empacotada
+│   ├── ETAPA2_BUSCA_FOTO.md         # Consulta por código de barras e foto na aba Estoque
 │   └── PROMPT_MESTRE_BASE44.md      # Especificação técnica completa e etapas obrigatórias (Base44)
 ├── tests/
-│   ├── run-tests.js                 # 49 testes automatizados (revisão + Etapa 1)
+│   ├── run-tests.js                 # 62 testes automatizados (revisão + Etapas 1 e 2)
 │   └── dom-harness.js               # Mini-DOM para rodar os testes no Node
 └── assets/
     ├── Icone_MDO.png                # Ícone oficial do aplicativo (617x617, original)
