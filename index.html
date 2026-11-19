@@ -568,6 +568,99 @@ function drawRel(){
  el.innerHTML=h;
  el.querySelectorAll("[data-a='relP']").forEach(b=>b.onclick=()=>{REL.dias=Number(b.dataset.n);drawRel()});
 }
+/* ===== Seção 10.3 — Aviso de produto sem movimentação (período configurável) ===== */
+const PARADO=ls("mdo_parado",null)||{dias:0,ativo:true}; /* 0 = desligado */
+function paradoDias(){return Math.max(0,Number(PARADO.dias)||0)}
+/* produtos sem NENHUMA movimentação nos últimos N dias */
+function parados(dias){
+ const d=Number(dias);
+ if(!(d>0))return [];           /* 0 ou vazio = desligado: não lista nada */
+ const limite=Date.now()-d*86400000;
+ const ultimo={};
+ M.filter(vivo).forEach(m=>{const t=Number(m.ts)||0;if(!ultimo[m.c]||t>ultimo[m.c])ultimo[m.c]=t});
+ return PP.filter(p=>{
+  const base=+p[3]||0;
+  const u=ultimo[p[0]]||0;
+  if(base<=0&&!u)return false;           /* nunca teve estoque nem movimento: não é "parado", é vazio */
+  return u<limite;
+ }).map(p=>({codigo:p[0],nome:p[1]+" "+p[2],desde:ultimo[p[0]]||0}));
+}
+function drawParados(){
+ const el=$("parCard");if(!el)return;
+ if(!isA()){el.innerHTML="";return}
+ const dias=paradoDias(),lista=dias?parados(dias):[];
+ let h='<div class="card"><h3>😴 Produtos sem movimentação</h3>'+
+  '<div class="mu">Período: '+(dias?dias+' dia(s)':'desligado')+'</div>'+
+  '<div class="row" style="gap:6px;flex-wrap:wrap">'+
+   [0,30,60,90,180].map(n=>'<button type="button" class="btn'+(dias===n?"":" ghost")+'" data-a="parP" data-n="'+n+'" style="width:auto">'+(n===0?"Desligado":n+" dias")+'</button>').join("")+
+  '</div>';
+ h+=dias?(lista.length?lista.slice(0,30).map(x=>'<div class="item"><span><b>'+esc(x.nome)+'</b><span class="mu">'+esc(x.codigo)+' · '+(x.desde?'última em '+fmt(x.desde):'sem registro')+'</span></span></div>').join("")+(lista.length>30?'<div class="mu">Mostrando 30 de '+lista.length+'.</div>':''):'<div class="mu">Todos os produtos tiveram movimentação no período.</div>'):'<div class="mu">Aviso desligado: escolha um período para ativar.</div>';
+ el.innerHTML=h+'</div>';
+ el.querySelectorAll("[data-a='parP']").forEach(b=>b.onclick=()=>{
+  PARADO.dias=Number(b.dataset.n);PARADO.ativo=PARADO.dias>0;
+  sv("mdo_parado",PARADO);drawParados();toast(PARADO.dias?"Aviso configurado para "+PARADO.dias+" dias.":"Aviso de produto parado desligado.")
+ });
+}
+/* ===== Seção 10.2 — Movimentações por operador e divergências ===== */
+/* Quem movimentou cada produto, e onde a conta não fecha. Só leitura. */
+const OPC={login:"",dias:30};
+function opDados(){
+ const d=new Date(),ini=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()-(Math.max(1,OPC.dias)-1)*86400000;
+ const movs=M.filter(vivo).filter(m=>(m.ts||0)>=ini);
+ const porOperador={};
+ movs.forEach(m=>{
+  const k=m.u||"-",o=porOperador[k]||(porOperador[k]={login:k,nome:m.o||k,produtos:{},total:0});
+  o.total++;
+  const p=PP[idx[m.c]],nome=p?p[1]+" "+p[2]:m.c;
+  const it=o.produtos[m.c]||(o.produtos[m.c]={codigo:m.c,nome,entradas:0,saidas:0,ajustes:0,ultimo:0});
+  if(m.t==="in")it.entradas+=Math.abs(m.q);else if(m.t==="out")it.saidas+=Math.abs(m.q);else it.ajustes+=Math.abs(m.q);
+  it.ultimo=Math.max(it.ultimo,m.ts||0);
+ });
+ /* divergências: saldo negativo, baixa maior que o saldo inicial e estorno de outro operador */
+ const b=bal(),divergencias=[];
+ PP.forEach((p,i)=>{
+  if(b[i]<0)divergencias.push({tipo:"saldo negativo",codigo:p[0],nome:p[1]+" "+p[2],detalhe:b[i]+" un."});
+ });
+ movs.filter(m=>m.t==="out").forEach(m=>{
+  const i=idx[m.c];if(i==null)return;
+  const inicial=+PP[i][3]||0;
+  if(m.q>inicial)divergencias.push({tipo:"baixa maior que o inicial",codigo:m.c,nome:PP[i][1]+" "+PP[i][2],detalhe:m.q+" un. por "+(m.o||m.u)});
+ });
+ movs.filter(m=>m.est).forEach(m=>{
+  const orig=M.find(x=>x.id===m.est);
+  if(orig&&orig.u!==m.u)divergencias.push({tipo:"estorno de outro operador",codigo:m.c,nome:nomeP(m.c),detalhe:(m.o||m.u)+" estornou "+(orig.o||orig.u)});
+ });
+ const vistos=new Set(),unicas=[];
+ divergencias.forEach(x=>{const k=x.tipo+"|"+x.codigo+"|"+x.detalhe;if(vistos.has(k))return;vistos.add(k);unicas.push(x)});
+ return{periodo:OPC.dias,movs,operadores:Object.values(porOperador).sort((a,b2)=>b2.total-a.total),divergencias:unicas};
+}
+function drawOperadores(){
+ const el=$("opRel");if(!el)return;
+ if(!isA()){el.innerHTML="";return}
+ const d=opDados();
+ let h='<div class="card"><h3>🔍 Por operador e divergências</h3>'+
+  '<div class="row" style="gap:6px;flex-wrap:wrap">'+[7,30,90].map(n=>'<button type="button" class="btn'+(d.periodo===n?"":" ghost")+'" data-a="opP" data-n="'+n+'" style="width:auto">'+n+' dias</button>').join("")+'</div>'+
+  (d.operadores.length?d.operadores.map(o=>'<div class="item"><span><b>'+esc(o.nome)+'</b><span class="mu">'+esc(o.login)+' · '+o.total+' movimentações</span></span><button type="button" class="btn ghost" data-a="opVer" data-v="'+esc(o.login)+'" style="width:auto">Ver produtos</button></div>').join(""):'<div class="mu">Sem movimentação no período.</div>')+
+  '</div>';
+ h+='<div class="card"><h3>⚠ Divergências ('+d.divergencias.length+')</h3>'+
+  (d.divergencias.length?d.divergencias.slice(0,40).map(x=>'<div class="item"><span><b>'+esc(x.nome)+'</b><span class="mu">'+esc(x.codigo)+' · '+esc(x.tipo)+'</span></span><span class="pill n">'+esc(x.detalhe)+'</span></div>').join(""):'<div class="mu">Nenhuma divergência no período.</div>')+
+  (d.divergencias.length>40?'<div class="mu">Mostrando 40 de '+d.divergencias.length+'.</div>':'')+'</div>';
+ h+='<div id="opDetalhe"></div>';
+ el.innerHTML=h;
+ el.querySelectorAll("[data-a='opP']").forEach(b=>b.onclick=()=>{OPC.dias=Number(b.dataset.n);OPC.login="";drawOperadores()});
+ el.querySelectorAll("[data-a='opVer']").forEach(b=>b.onclick=()=>{OPC.login=b.dataset.v;drawOperadores()});
+ const det=$("opDetalhe");
+ if(det&&OPC.login){
+  const o=d.operadores.find(x=>x.login===OPC.login);
+  if(!o)return;
+  const linhas=Object.values(o.produtos).sort((a,b2)=>b2.ultimo-a.ultimo);
+  det.innerHTML='<div class="card"><h3>👤 '+esc(o.nome)+' — '+linhas.length+' produto(s)</h3>'+
+   linhas.map(x=>'<div class="item"><span><b>'+esc(x.nome)+'</b><span class="mu">'+esc(x.codigo)+' · última em '+fmt(x.ultimo)+'</span></span><span class="mu">⬆ '+x.entradas+' · ⬇ '+x.saidas+(x.ajustes?' · ajuste '+x.ajustes:'')+'</span></div>').join("")+
+   '<button type="button" class="btn ghost" data-a="opFechar" style="width:auto">Fechar</button></div>';
+  const f=det.querySelector("[data-a='opFechar']");
+  if(f)f.onclick=()=>{OPC.login="";drawOperadores()};
+ }
+}
 /* 7.1 — inventário com responsável, divergências e histórico */
 let INV={ativo:false,resp:"",ini:0,itens:{},hist:[]};
 function invSalvar(){sP("inv",INV)}
@@ -619,6 +712,12 @@ function alertas(){
  });
  if(FILA.length){const m="Falha de sincronização: "+FILA.length+" operação(ões) não confirmada(s)";if(!jaTem(m))novos.push(m)}
  if(REQ.length){const m="Movimentações pendentes de aprovação: "+REQ.length;if(!jaTem(m))novos.push(m)}
+ /* 10.3 — produto sem movimentação, no período que o administrador escolheu */
+ const diasParado=paradoDias();
+ if(diasParado){
+  const p=parados(diasParado);
+  if(p.length){const m="Produtos sem movimentação há "+diasParado+" dias: "+p.length;if(!jaTem(m))novos.push(m)}
+ }
  novos.forEach(m=>{
   av.push({id:uid(),m,ts:Date.now(),lido:false,dia:hoje});
  });
@@ -1130,13 +1229,15 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
   '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
+ h+='<div id="parCard"></div>';
+ h+='<div id="opRel"></div>';
  h+='<div id="pbi"></div>';
  h+='<div id="rel"></div>';
  h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
  $("adm").innerHTML=h;
  $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
- drawRel();drawPbi();
+ drawRel();drawParados();drawOperadores();drawPbi();
  syncStatus()}
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
 $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
