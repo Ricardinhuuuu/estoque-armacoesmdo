@@ -99,7 +99,12 @@ pendentes.push(ta("senha é gravada como hash, nunca em texto puro", async () =>
   const env = novo(); await comoAdmin(env); await flush();
   const bruto = env.store.get("mdo_u");
   okv(bruto && !bruto.includes("senha123"), "a senha apareceu em texto puro no localStorage");
-  eq(JSON.parse(bruto)[0].h.length, 64, "tamanho do hash:");
+  const h = JSON.parse(bruto)[0].h;
+  const temSubtle = run(env, "!!(crypto&&crypto.subtle&&crypto.subtle.digest)");
+  /* com HTTPS: SHA-256 (64 dígitos). Em HTTP simples o navegador não expõe crypto.subtle,
+     então o app usa o hash de reserva — o importante é ser hash, nunca o texto da senha. */
+  if (temSubtle) eq(h.length, 64, "tamanho do hash SHA-256:");
+  else okv(h.length >= 8 && !h.includes("senha123"), "sem crypto.subtle ainda precisa ser hash: " + h);
 }));
 pendentes.push(ta("bloqueio após 3 tentativas erradas, com contagem regressiva", async () => {
   const env = novo(); await comoAdmin(env); await flush();
