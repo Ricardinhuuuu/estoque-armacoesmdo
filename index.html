@@ -20,7 +20,15 @@ function loadLib(k){const L=LIBS[k];if(L.ok())return Promise.resolve();if(L.p)re
   const t=setTimeout(()=>end(()=>{s.remove();rej()}),9000);
   s.onload=()=>end(()=>L.ok()?res():(s.remove(),rej()));s.onerror=()=>end(()=>{s.remove();rej()});s.src=u;document.head.appendChild(s)});
  L.p=(async()=>{for(let r=0;r<2;r++)for(const u of L.u){try{await one(u);return}catch(e){}}throw new Error("lib")})().catch(e=>{L.p=null;throw e});return L.p}
-loadLib("qr").catch(()=>{});loadLib("xl").catch(()=>{});
+/* ETAPA 6 — desempenho: as bibliotecas carregam em segundo plano, enquanto o app já abriu.
+   Se elas ainda não chegaram quando a câmera abrir, o carregamento espera por elas (loadLib reaproveita). */
+let LIBS_PROMESSAS=null;
+function preCarregarLibs(){
+ if(LIBS_PROMESSAS)return LIBS_PROMESSAS;
+ LIBS_PROMESSAS={qr:loadLib("qr").catch(()=>null),xl:loadLib("xl").catch(()=>null)};
+ return LIBS_PROMESSAS;
+}
+setTimeout(()=>preCarregarLibs(),1200);
 </script>
 <style>
 :root{--bg:#eef3fb;--card:#fff;--tx:#0f1f3d;--mu:#5b6b88;--b:#0b2a7a;--b2:#1f7bff;--bl:#d9e8ff;--r:#dc2626;--rl:#fee2e2;--ok:#16a34a;--y:#fef3c7;--bd:#d6e0f2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -482,12 +490,12 @@ setInterval(()=>{if(syncAtivo()&&FILA.length)sincronizar({silencioso:true})},300
 
 /* ===== ETAPA 6 — Leitura do cadastro por página, sem carregar tudo de uma vez ===== */
 /* O app continua local; quando o servidor está ligado, oferece a leitura paginada do catálogo. */
-const BUSCA={termo:"",pagina:0,paginas:1,total:0,itens:null,carregando:false};
+const BUSCA={termo:"",pagina:0,paginas:1,total:0,itens:null,carregando:false,erro:""};
 async function buscaServidor(termo,pagina){
- BUSCA.carregando=true;drawBusca();
+ BUSCA.carregando=true;BUSCA.erro="";drawBusca();
  const j=await buscarProdutosServidor(termo,pagina);
  BUSCA.carregando=false;
- if(!j){drawBusca();return null}
+ if(!j){BUSCA.erro=SYNC.ultimoErro||"falha de rede";drawBusca();return null}
  BUSCA.termo=termo||"";BUSCA.pagina=j.pagina;BUSCA.paginas=j.paginas;BUSCA.total=j.total;
  BUSCA.itens=j.produtos||[];
  drawBusca();
@@ -500,7 +508,10 @@ function drawBusca(){
  h+='<div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn ghost" id="buscG" style="width:auto">🔎 Buscar no servidor</button>'+
   (BUSCA.itens&&BUSCA.pagina>1?'<button type="button" class="btn ghost" id="buscA" style="width:auto">← Anterior</button>':'')+
   (BUSCA.itens&&BUSCA.pagina<BUSCA.paginas?'<button type="button" class="btn ghost" id="buscP" style="width:auto">Próxima →</button>':'')+'</div>';
- h+=BUSCA.carregando?'<div class="mu">Carregando…</div>':(BUSCA.itens?BUSCA.itens.map(p=>'<div class="item"><span><b>'+esc(p.descricao)+'</b><span class="mu">'+esc(p.cor)+' · '+esc(p.codigo)+'</span></span></div>').join(""):"");
+ h+=BUSCA.erro?'<div class="mu" style="color:var(--n)">Não foi possível buscar no servidor: '+esc(BUSCA.erro)+'. A busca no aparelho continua funcionando.</div>'
+  :BUSCA.carregando?'<div class="mu">Carregando…</div>'
+  :(BUSCA.itens&&!BUSCA.itens.length)?'<div class="mu">Nenhum produto encontrado no servidor para “'+esc(BUSCA.termo||"")+'”.</div>'
+  :(BUSCA.itens?BUSCA.itens.map(p=>'<div class="item"><span><b>'+esc(p.descricao)+'</b><span class="mu">'+esc(p.cor)+' · '+esc(p.codigo)+'</span></span></div>').join(""):"");
  el.innerHTML=h;
  const g=$("buscG");if(g)g.onclick=()=>buscaServidor(String($("q").value||""),0);
  const a=$("buscA");if(a)a.onclick=()=>buscaServidor(BUSCA.termo,BUSCA.pagina-2);
@@ -1614,10 +1625,12 @@ function camErr(e){const n=(e&&e.name)||String(e);
 /* ===== ETAPA 6.1 — diagnóstico da câmera, gravado no próprio aparelho =====
    Serve para o administrador saber, sem adivinhar, o que o aparelho conseguiu fazer:
    leitor usado, zoom de câmera disponível, se o digital completou e quantas leituras deram certo. */
-const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0};
+const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0,msAbertura:0};
 function camDiagSalvar(){CAMDIAG.ultima=Date.now();try{localStorage.setItem("mdo_camdiag",JSON.stringify(CAMDIAG))}catch(e){}}
 function camDiagLer(){return ls("mdo_camdiag",null)}
 /* nome legível do aparelho — só para saber qual é qual ao comparar iPhone e Android */
+/* ETAPA 6 — o diagnóstico passa a informar também o tempo de abertura (o prompt pede esse número) */
+function camTempo(){const d=camDiagLer()||{};return typeof d.msAbertura==="number"?d.msAbertura:null}
 function camAparelho(){
  const ua=String(navigator.userAgent||"");
  let nome="";
@@ -1642,7 +1655,8 @@ function camDiagCopiar(){
 function camDiagTexto(){
  const d=camDiagLer();
  if(!d)return "A câmera ainda não foi usada neste aparelho.";
- return "Leitor: "+(d.leitor||"—")+" · zoom de câmera: "+(d.zoomMax>1?d.zoomMax.toFixed(1)+"x":"não exposto")+
+ return "Aparelho: "+(d.aparelho||"—")+" · abertura da câmera: "+(d.msAbertura?d.msAbertura+" ms":"—")+
+  " · leitor: "+(d.leitor||"—")+" · zoom de câmera: "+(d.zoomMax>1?d.zoomMax.toFixed(1)+"x":"não exposto")+
   " · ampliação digital: "+(d.digital>1?d.digital.toFixed(1)+"x":"não usada")+" · leituras: "+d.lidas+
   " · não lidas: "+d.falhas+(d.ultima?" · último uso: "+fmt(d.ultima):"");
 }
@@ -1772,6 +1786,7 @@ async function startLib(box){
  };
  return q}
 $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;
+ const t0=(window.performance&&performance.now)?performance.now():Date.now();
  if(sc)return camOff();
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}
  box.style.display="block";msg.textContent="Iniciando câmera…";$("camBtn").disabled=true;
@@ -1785,6 +1800,7 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
   addLaser(box);
   zoomBarra(true);
   /* registra o que este aparelho realmente conseguiu */
+  CAMDIAG.msAbertura=Math.round(((window.performance&&performance.now)?performance.now():Date.now())-t0);
   CAMDIAG.aparelho=camAparelho();
   CAMDIAG.leitor=(sc&&sc.mdoLeitor)||(nf?"nativo":"biblioteca");
   const zz=(sc&&sc.mdoZoom)||null;
