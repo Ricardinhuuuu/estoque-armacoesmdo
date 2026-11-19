@@ -1019,9 +1019,31 @@ function qCartao(codigoLido,r){
   '<div class="mu" style="margin-top:10px"><b>Esta consulta não altera o estoque.</b></div></div>';
 }
 /* leitura na aba Estoque: mostra o cartão e mantém a câmera aberta para a próxima consulta */
+/* ===== Seção 9 — Registro de leituras: cada leitura feita fica gravada para conferência ===== */
+const LEIT={origem:"",n:0,itens:[]};
+function leitSalvar(){
+ try{localStorage.setItem("mdo_leit",JSON.stringify(LEIT.itens.slice(-500)))}catch(e){}
+}
+function leitRegistrar(origem,lido,r){
+ LEIT.n++;
+ LEIT.itens.push({id:uid(),ts:Date.now(),origem:origem||"?",lido:String(lido),c:r?r.c:"",produto:r?r.produto:"",
+  cor:r?r.cor:"",saldo:r?r.saldo:null,achou:!!r,por:cur?cur.l:"-"});
+ leitSalvar();
+}
+function leitLista(){return ls("mdo_leit",[])}
+/* resumo por origem: quantas leituras e quantas encontraram produto */
+function leitResumo(){
+ const l=leitLista();
+ if(!l.length)return "Nenhuma leitura registrada ainda. Faça uma leitura na aba Estoque para começar a conferência.";
+ const por={};
+ l.forEach(x=>{const o=por[x.origem]||(por[x.origem]={n:0,ok:0});o.n++;if(x.achou)o.ok++});
+ return l.length+" leitura(s) · "+Object.keys(por).map(o=>o+": "+por[o].ok+"/"+por[o].n+" encontrada(s)").join(" · ");
+}
+/* registra o que já foi lido ao abrir a aba Estoque (as leituras antigas ficam em mdo_leit) */
 function qLeitura(txt){
  const lido=String(txt||"").trim();if(!lido)return;
  const r=qBusca(lido);
+ leitRegistrar(LEIT.origem||"leitura",lido,r);
  qCartao(lido,r);
  if(r){beep(true);hit(r.c);qMsg("Produto encontrado. Aponte outra etiqueta para consultar de novo.")}
  else{beep(false);qMsg("Código não cadastrado. Nada foi alterado.")}
@@ -1043,6 +1065,7 @@ $("qCam").onclick=async()=>{
  if(qState.sc)return qCamOff();
  const box=$("qC");
  box.innerHTML='<div id="qCamBox" style="border-radius:14px;overflow:hidden;margin-top:10px;border:3px solid var(--b);position:relative;background:#000"></div>';
+ LEIT.origem="câmera (aba Estoque)";
  qMsg("Iniciando câmera…");$("qCam").disabled=true;
  try{
   const nf=await nativeOK();
@@ -1211,11 +1234,15 @@ function qMotivoFoto(){
   "ou digite o código acima.";
 }
 $("qPho").onclick=()=>{initAudio();$("qPh").click()};
+/* a origem de cada leitura, para o registro dizer de onde veio */
+$("qCam").addEventListener&&0;
 $("qPh").onchange=async e=>{
  const f=e.target.files[0];e.target.value="";if(!f)return;
+ LEIT.origem="foto/galeria";
  qMsg("Lendo a foto…");$("qPho").disabled=true;
  try{
   const r=await qLerFoto(f);
+  LEIT.origem=r.codigo?(r.tentativas>1?"foto/galeria (reprocessada)":"foto/galeria"):"foto/galeria (falhou)";
   if(r.codigo){
    qLeitura(r.codigo);
    qMsg("Lido na foto (código "+r.codigo+"). Nada foi alterado.");
@@ -1276,6 +1303,10 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
   '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
+ h+='<div class="card"><h3>🧪 Conferência das leituras</h3>'+
+  '<div class="mu" id="leitR">'+esc(leitResumo())+'</div>'+
+  '<button type="button" class="btn ghost" data-a="leitCSV">⬇ Exportar leituras (CSV)</button>'+
+  '<button type="button" class="btn ghost" data-a="leitLimpar">🗑 Limpar registro de leituras</button></div>';
  h+='<div class="card"><h3>📷 Diagnóstico da câmera</h3><div class="mu" id="camA">Aparelho: '+esc(camAparelho())+'</div>'+
   '<div class="mu" id="camD">'+esc(camDiagTexto())+'</div>'+
   '<button type="button" class="btn" data-a="camCopiar">📋 Copiar diagnóstico</button>'+
@@ -1313,6 +1344,19 @@ async function act(a,i){
    if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
    audit("CONTA SERVIDOR",i,acaoMap[a]);act("ctListar");
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
+ if(a==="leitCSV"){
+  const l=leitLista();
+  if(!l.length)return toast("Nenhuma leitura registrada ainda.",true);
+  csv("mdo-leituras-"+new Date().toISOString().slice(0,10)+".csv",
+   [["Data\Hora","Origem","Código lido","Código do cadastro","Produto","Cor","Saldo","Encontrou","Usuário"]]
+   .concat(l.map(x=>[fmt(x.ts),x.origem,x.lido,x.c,x.produto,x.cor,x.saldo==null?"":x.saldo,x.achou?"sim":"não",x.por])));
+  audit("EXPORTAÇÃO","leituras ("+l.length+")");return}
+ if(a==="leitLimpar"){
+  if(!confirm("Apagar o registro de leituras deste aparelho? (não mexe em estoque nem em movimentações)"))return;
+  try{localStorage.removeItem("mdo_leit")}catch(e){}
+  LEIT.n=0;LEIT.itens=[];
+  const el=$("leitR");if(el)el.textContent=leitResumo();
+  audit("LEITURAS","registro limpo");return}
  if(a==="camCopiar"){camDiagCopiar();return}
  if(a==="camZerar"){
   CAMDIAG.aparelho="";CAMDIAG.leitor="";CAMDIAG.zoomMax=0;CAMDIAG.digital=0;CAMDIAG.lidas=0;CAMDIAG.falhas=0;CAMDIAG.ultima=0;
@@ -1599,7 +1643,7 @@ async function startLib(box){
   return{nativo:nat,falta};
  };
  return q}
-$("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");last="";lastT=0;
+$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;
  if(sc)return camOff();
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}
  box.style.display="block";msg.textContent="Iniciando câmera…";$("camBtn").disabled=true;
