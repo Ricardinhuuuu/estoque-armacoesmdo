@@ -91,17 +91,29 @@ function makeEnv(opts = {}) {
     removeItem: (k) => store.delete(k),
     clear: () => store.clear(),
   };
+  /* timers: os disparados pelo app (reenvio automático) não seguram o processo de teste */
+  const timers = new Set();
+  const setTimeoutReal = setTimeout, clearTimeoutReal = clearTimeout;
+  const setTimeoutCurto = (fn, ms) => {
+    const id = setTimeoutReal(() => { timers.delete(id); fn(); }, ms);
+    timers.add(id); return id;
+  };
+  const limparTimers = () => { for (const id of timers) clearTimeoutReal(id); timers.clear(); };
   const respostas = { confirm: true, prompt: [] };
   const log = { alerts: [], toasts: [] };
-  const ctx = {
+  const ctx = { limparTimers,
+
     document, localStorage, console,
+    setTimeout: setTimeoutCurto, clearTimeout: (id) => { timers.delete(id); clearTimeoutReal(id); },
+    setInterval: () => 0, clearInterval: () => {},
     navigator: { vibrate() {}, mediaDevices: undefined, userAgent: "node", onLine: true },
     addEventListener() {}, removeEventListener() {},
     fetch: async () => { throw new Error("rede indisponível no teste"); },
     window: {}, URL: { createObjectURL: () => "blob:x", revokeObjectURL() {} },
     Blob: class { constructor() {} },
-    /* timers de verdade, como no navegador: o app usa corridas com tempo limite */
-    setTimeout, setInterval, clearInterval, queueMicrotask,
+    /* timers de verdade, como no navegador: o app usa corridas com tempo limite.
+       setTimeout/clearTimeout entram abaixo (versão controlada) para não segurar o processo. */
+    setInterval: () => 0, clearInterval: () => {}, queueMicrotask,
     FileReader: class {
       readAsDataURL() { this.result = "data:image/png;base64,AAA"; if (this.onload) this.onload(); }
     },
@@ -111,7 +123,7 @@ function makeEnv(opts = {}) {
       get src() { return this._src; }
     },
     createImageBitmap: async (f) => ({ width: 1200, height: 800, close() {}, _file: f }),
-    clearTimeout, Math, Date, JSON, Promise, Map, Set, parseInt, parseFloat, isFinite, Number, String, Object, Array, TextEncoder,
+    Math, Date, JSON, Promise, Map, Set, parseInt, parseFloat, isFinite, Number, String, Object, Array, TextEncoder,
     crypto: require("crypto").webcrypto,
     confirm: (m) => { log.confirms = (log.confirms || []).concat(m); return respostas.confirm; },
     prompt: (m, d) => { log.prompts = (log.prompts || []).concat(m); return respostas.prompt.length ? respostas.prompt.shift() : d; },
@@ -136,4 +148,4 @@ function carregar(env, htmlPath) {
   return env;
 }
 
-module.exports = { makeEnv, carregar };
+module.exports = { makeEnv, carregar, limparTimers: (env) => env.ctx.limparTimers && env.ctx.limparTimers() };
