@@ -44,8 +44,12 @@ main{padding:14px;max-width:640px;margin:0 auto}
 .seg button.on.out{background:var(--r);color:#fff}.seg button.on.in{background:var(--b);color:#fff}
 .btn{border:0;border-radius:12px;padding:13px 16px;font-weight:700;font-size:15px;background:var(--b);color:#fff;width:100%;cursor:pointer}
 .btn.red{background:var(--r)}.btn.ghost{background:var(--bl);color:var(--tx)}
-#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;height:min(26vh,190px)}
-#cam video,#cam canvas{width:100%;height:100%;object-fit:contain;display:block}
+/* Visor em 4:3 (a proporção que o iPhone entrega de verdade). O iOS não deixa pedir paisagem:
+   ele manda o vídeo em retrato, e num visor 16:9 isso viram duas tarjas pretas nas laterais.
+   Em 4:3 a imagem preenche a largura inteira e não perde nada (contain, sem corte). */
+#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;aspect-ratio:4/3;height:auto;max-height:46vh}
+/* contain = imagem inteira na caixa; a caixa e 4:3, entao nao sobra tarja nas laterais */
+#cam video,#cam canvas{width:100%;height:100%;object-fit:cover;display:block}
 /* barra de zoom embaixo do visor */
 #zoomBar{display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;flex-wrap:wrap}
 #zoomBar .zbtns{display:flex;gap:6px;margin-left:auto}
@@ -60,7 +64,20 @@ main{padding:14px;max-width:640px;margin:0 auto}
 #pbiFiltros summary{cursor:pointer;font-weight:600;padding:4px 0}
 @media(min-width:760px){#pbiFiltros summary{display:none}}
 #pbi .item[title]{cursor:pointer}
+/* Consulta por foto usa outro visor (#qCamBox, criado na hora): mesma altura do Bipar */
+#qCamBox{aspect-ratio:4/3;height:auto;max-height:46vh;width:100%;max-width:100%}
+#qCamBox video,#qCamBox canvas{width:100%;height:100%;object-fit:cover;display:block}
+body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-ratio:4/3;height:auto;max-height:46vh;border-radius:0!important;border:0!important;border-bottom:3px solid var(--b)!important;margin-top:0!important;padding-top:env(safe-area-inset-top)}
 #zoomBar.on{display:flex}
+/* Visor na largura toda da tela: enquanto a camera roda, o visor e a barra de zoom
+   saem do cartao (que tem padding e limite de 640px) e viram uma faixa de borda a borda.
+   Sem a camera, tudo volta para dentro do cartao como antes. */
+body.camLarga #camW,body.camLarga #zoomBar{position:fixed;left:0;right:0;z-index:60}
+body.camLarga #camW{top:0;padding-top:env(safe-area-inset-top)}
+body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:4/3;height:auto;max-height:46vh}
+body.camLarga #zoomBar{background:var(--card);border:0;border-bottom:1px solid var(--bd);border-radius:0;margin-top:0;padding:8px 12px}
+/* o laser acompanha o visor colado no topo */
+body.camLarga #gl{inset:env(safe-area-inset-top) 0 0 0;border-radius:0}
 #zoomBar input[type=range]{flex:1;min-width:80px;accent-color:var(--b2)}
 #zoomBar b{min-width:46px;text-align:right;font-size:15px}
 .row{display:flex;gap:8px;margin-top:10px}.row input{flex:1;min-width:0;border:2px solid var(--bd);background:var(--card);color:var(--tx);border-radius:12px;padding:12px;font-size:16px}
@@ -1271,6 +1288,7 @@ async function qCamOff(){
  const st=qState.sc;qState.sc=null;
  if(st){try{await st.stop()}catch(e){}}
  const box=$("qC");if(box)box.innerHTML="";
+ document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */
  const b=$("qCam");if(b)b.textContent="📷 Buscar por código de barras";
 }
 /* --- câmera da aba Estoque: reusa os mesmos motores da aba Bipar (nativo → biblioteca) --- */
@@ -1291,6 +1309,7 @@ $("qCam").onclick=async()=>{
    sc=await startLibQ($("qCamBox"));
   }
   qState.sc=sc;addLaser($("qCamBox"));
+  document.body.classList.add("camLarga");      /* visor na largura toda da tela */
   $("qCam").textContent="⏹ Parar busca";
   const aviso=$("camMsg").dataset.zoom?(" "+$("camMsg").dataset.zoom):"";
   qMsg("✅ Aponte a etiqueta para consultar."+aviso);
@@ -1306,8 +1325,10 @@ async function startNativeQ(box,f){
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false})}
  catch(e){if(e&&e.name==="OverconstrainedError")stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});else throw e}
  const v=document.createElement("video");v.setAttribute("playsinline","");v.muted=true;v.autoplay=true;
- v.style.cssText="width:100%;display:block;aspect-ratio:16/9;object-fit:contain";v.srcObject=stream;box.appendChild(v);
+ v.style.cssText="width:100%;height:100%;display:block;object-fit:contain";v.srcObject=stream;box.appendChild(v);
  try{await v.play()}catch(e){}
+ v.addEventListener&&v.addEventListener("loadedmetadata",()=>ajustarProporcao(box));
+ setTimeout(()=>ajustarProporcao(box),400);
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
  let on=true,rodando=false;
@@ -1322,7 +1343,7 @@ async function startLibQ(box){
    .map(k=>F[k]).filter(v=>v!==undefined);
  const o={verbose:false,formatsToSupport:todos.length?todos:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
  /* fps alto para bipagem contínua; caixa de leitura grande para aceitar o código longe */
- const cfg={fps:40,aspectRatio:1.777,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.94),height:Math.floor(h*.6)})};
+ const cfg={fps:40,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.94),height:Math.floor(h*.6)})};
  let q=new Html5Qrcode("qCamBox",o);
  try{await q.start({facingMode:"environment"},{...cfg,videoConstraints:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}},qDedupe,()=>{})}
  catch(e){try{await q.clear()}catch(x){}
@@ -1720,7 +1741,8 @@ $("undo").onclick=()=>{
  if(!confirm("Desfazer a sua última bipada: "+TN[minha.t]+" de "+minha.q+" un. — "+nomeP(minha.c)+"?"))return;
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
-async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
+async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
+ document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 /* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
 const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
 const FMT=["code_128","ean_13","qr_code"];   /* reserva, usada quando o aparelho não diz o que suporta */
@@ -1743,7 +1765,7 @@ function camErr(e){const n=(e&&e.name)||String(e);
 /* ===== ETAPA 6.1 — diagnóstico da câmera, gravado no próprio aparelho =====
    Serve para o administrador saber, sem adivinhar, o que o aparelho conseguiu fazer:
    leitor usado, zoom de câmera disponível, se o digital completou e quantas leituras deram certo. */
-const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0,msAbertura:0};
+const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0,msAbertura:0,vw:0,vh:0,cw:0,ch:0};
 function camDiagSalvar(){CAMDIAG.ultima=Date.now();try{localStorage.setItem("mdo_camdiag",JSON.stringify(CAMDIAG))}catch(e){}}
 function camDiagLer(){return ls("mdo_camdiag",null)}
 /* nome legível do aparelho — só para saber qual é qual ao comparar iPhone e Android */
@@ -1776,7 +1798,26 @@ function camDiagTexto(){
  return "Aparelho: "+(d.aparelho||"—")+" · abertura da câmera: "+(d.msAbertura?d.msAbertura+" ms":"—")+
   " · leitor: "+(d.leitor||"—")+" · zoom de câmera: "+(d.zoomMax>1?d.zoomMax.toFixed(1)+"x":"não exposto")+
   " · ampliação digital: "+(d.digital>1?d.digital.toFixed(1)+"x":"não usada")+" · leituras: "+d.lidas+
-  " · não lidas: "+d.falhas+(d.ultima?" · último uso: "+fmt(d.ultima):"");
+  " · não lidas: "+d.falhas+
+  " · vídeo: "+((d.vw&&d.vh)?(d.vw+"×"+d.vh):"—")+
+  " · visor: "+((d.cw&&d.ch)?(d.cw+"×"+d.ch):"—")+
+  (d.ultima?" · último uso: "+fmt(d.ultima):"");
+}
+/* O iPhone (Safari) entrega o video em retrato e nao deixa pedir paisagem.
+   Aqui a caixa do visor passa a seguir a proporcao REAL do video: assim a imagem preenche
+   a largura toda e nenhuma tarja preta aparece. Se o video ainda nao tem tamanho, fica 4:3. */
+function ajustarProporcao(box){
+ try{
+  const v=box&&box.querySelector("video");
+  if(!v)return;
+  const w=v.videoWidth,h=v.videoHeight;
+  if(!w||!h)return;
+  const alvo=box;
+  /* proporcao entre 0.75 e 1.34 (retrato/quadrado) mantem a imagem inteira sem tarja */
+  const p=Math.max(0.75,Math.min(4/3,h/w));
+  alvo.style.aspectRatio=String(1/p);   /* largura/altura */
+  alvo.style.maxHeight="56vh";
+ }catch(e){}
 }
 /* confiança da última leitura feita pelo leitor nativo (null quando o leitor não informa) */
 let ultimaConf=null;
@@ -1853,7 +1894,9 @@ async function aplicarZoom(stream,box){
  if(v){
   v.style.transformOrigin="50% 50%";
   /* ETAPA 6.1: com zoom de câmera menor que 3,4x, o digital completa (antes a imagem ficava sem) */
-  v.style.transform=(zNativo&&max>=ZOOMATUAL)?"":("scale("+digitalFalta+")");
+  /* (C) com zoom nativo do aparelho, NADA de ampliacao digital: o iPhone expoe ate 10x
+     e esticar pixel so piora a leitura do codigo */
+  v.style.transform=(zNativo&&max>=ZOOMATUAL)?"":(zNativo?"":("scale("+digitalFalta+")"));
  }
  if(!zNativo)zoomAviso("Zoom por ampliação digital (este aparelho não expõe zoom de câmera).");
  else if(max<ZOOMATUAL)zoomAviso("Zoom de câmera até "+max.toFixed(1)+"x; o restante até "+ZOOMATUAL.toFixed(1)+"x é ampliação digital.");
@@ -1868,7 +1911,7 @@ async function startNative(box,f){
  const det=new BarcodeDetector({formats:f});let stream;
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false})}
  catch(e){if(e&&e.name==="OverconstrainedError")stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});else throw e}
- const v=document.createElement("video");v.setAttribute("playsinline","");v.muted=true;v.autoplay=true;v.style.cssText="width:100%;display:block;aspect-ratio:16/9;object-fit:contain";v.srcObject=stream;box.appendChild(v);
+ const v=document.createElement("video");v.setAttribute("playsinline","");v.muted=true;v.autoplay=true;v.style.cssText="width:100%;height:100%;display:block;object-fit:contain";v.srcObject=stream;box.appendChild(v);
  try{await v.play()}catch(e){}
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
@@ -1887,7 +1930,7 @@ async function startNative(box,f){
 /* Motor 2 (iPhone/Safari e demais): biblioteca html5-qrcode */
 async function startLib(box){
  const F=Html5QrcodeSupportedFormats,o={verbose:false,formatsToSupport:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
- const cfg={fps:30,aspectRatio:1.777,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.92),height:Math.floor(h*.42)})};
+ const cfg={fps:30,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.92),height:Math.floor(h*.42)})};
  let q=new Html5Qrcode("cam",o);
  try{await q.start({facingMode:"environment"},{...cfg,videoConstraints:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}},dedupe,()=>{})}
  catch(e){try{await q.clear()}catch(x){}
@@ -1933,10 +1976,18 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
    try{await loadLib("qr")}catch(e){throw{name:"LibFail"}}
    sc=await startLib(box)}
   addLaser(box);
+  document.body.classList.add("camLarga");      /* visor na largura toda da tela */
   zoomBarra(true);
   /* registra o que este aparelho realmente conseguiu */
   CAMDIAG.msAbertura=Math.round(((window.performance&&performance.now)?performance.now():Date.now())-t0);
   CAMDIAG.aparelho=camAparelho();
+  ajustarProporcao(box);          /* o visor segue o video que o aparelho realmente entrega */
+  try{
+   const vv=box.querySelector("video");
+   if(vv&&vv.videoWidth){CAMDIAG.vw=vv.videoWidth;CAMDIAG.vh=vv.videoHeight}
+   const r=box.getBoundingClientRect&&box.getBoundingClientRect();
+   if(r&&r.width){CAMDIAG.cw=Math.round(r.width);CAMDIAG.ch=Math.round(r.height)}
+  }catch(e){}
   CAMDIAG.leitor=(sc&&sc.mdoLeitor)||(nf?"nativo":"biblioteca");
   const zz=(sc&&sc.mdoZoom)||null;
   CAMDIAG.zoomMax=zz?Number(zz.max)||0:0;

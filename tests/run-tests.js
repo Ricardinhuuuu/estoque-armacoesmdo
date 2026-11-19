@@ -144,7 +144,10 @@ pendentes.push(ta("administrador desbloqueia e define senha provisória → troc
   run(env, 'U.push({l:"op1",n:"Operador Um",r:"op",h:"x",st:"bloq",t:3});sU();draw()');
   const i = estado(env).U.findIndex((u) => u.l === "op1");
   env.respostas.prompt = ["provisoria1"];
-  run(env, `act("pw",${i})`); await flush();
+  /* o app grava a senha provisoria em DUAS etapas assincronas (hash + sugestao);
+     esperar a condicao em vez de 30 ms fixos: era esta a corrida que derrubava o CI */
+  run(env, `act("pw",${i})`);
+  await esperar(env, `U[${i}] && U[${i}].st === "ativo" && !!U[${i}].temp`);
   eq(estado(env).U[i].st, "ativo", "status após senha provisória:");
   eq(estado(env).U[i].temp, "provisoria1", "senha provisória marcada:");
   run(env, "cur=null;showLogin()");
@@ -647,12 +650,25 @@ t("câmera: visor mais baixo, largura inteira e botões de zoom", () => {
   const env = novo();
   const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
   const css = html.match(/#cam\{[^}]*\}/)[0];
-  okv(/height:min\((2[0-9]|3[0-2])vh/.test(css), "altura do visor deve ser compacta: " + css);
+  /* o visor segue a proporcao 4:3 do iPhone (era 16:9 fixo, que gerava tarjas pretas) */
+  okv(/aspect-ratio:4\/3/.test(css), "visor deve seguir a proporcao 4:3: " + css);
+  okv(/object-fit:contain/.test(html), "sem cortar a imagem");
+  okv(!/aspect-ratio:16\/9|aspectRatio:1\.777/.test(html), "nao pode voltar a forcar 16:9");
   okv(/width:100%/.test(css) && /max-width:100%/.test(css), "largura deve continuar inteira");
   okv(/object-fit:contain/.test(html), "imagem inteira dentro do visor");
   okv(/data-z="1"/.test(html) && /data-z="6"/.test(html), "faltam os botões rápidos de zoom");
   okv(/id="zoomR"/.test(html), "falta o controle deslizante de zoom");
   okv(html.indexOf('id="zoomBar"') > html.indexOf('id="cam"'), "a barra de zoom fica abaixo do visor");
+});
+
+t("câmera: visor ocupa a largura toda da tela enquanto a câmera roda", () => {
+  const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
+  okv(/body\.camLarga #camW[^{]*\{[^}]*position:fixed/.test(html), "o visor deve sair do cartão e ocupar a tela");
+  okv(/body\.camLarga #camW[^{]*\{[^}]*left:0[^}]*right:0/.test(html), "a faixa vai de borda a borda");
+  okv(/body\.camLarga #zoomBar/.test(html), "a barra de zoom acompanha o visor");
+  okv(/classList\.add\("camLarga"\)/.test(html), "ligar a câmera ativa o modo largo");
+  okv(/classList\.remove\("camLarga"\)/.test(html), "desligar a câmera volta ao cartão");
+  okv(/safe-area-inset-top/.test(html), "respeita o entalhe do celular");
 });
 
 t("câmera: formatos comuns de código de barras são pedidos ao leitor", () => {
