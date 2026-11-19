@@ -24,7 +24,8 @@ mdo-estoque/
 │   ├── ETAPA2_BUSCA_FOTO.md         # Consulta por código de barras e foto na aba Estoque
 │   ├── PROMPT_MESTRE_BASE44.md      # Especificação herdada (legado: o Base44 não é mais usado)
 │   ├── ETAPA3_SINCRONIZACAO.md      # Como ligar a sincronização na Vercel + Postgres
-│   └── ETAPA4_CONTAS_SERVIDOR.md    # Login, autocadastro e admin com segurança no servidor
+│   ├── ETAPA4_CONTAS_SERVIDOR.md    # Login, autocadastro e admin com segurança no servidor
+│   └── ETAPA5_PAINEL_RELATORIOS.md  # Painel, histórico, relatórios, inventário, alertas e Power BI
 ├── tests/
 │   ├── run-tests.js                 # 62 testes automatizados (revisão + Etapas 1 e 2)
 │   └── dom-harness.js               # Mini-DOM para rodar os testes no Node
