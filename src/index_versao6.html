@@ -111,9 +111,10 @@ const fmt=ts=>new Date(ts).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"
 const avKey="mdo_av";
 async function H(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("mdo|"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=5381;for(const ch of "mdo|"+s)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
-const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud"};
+const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync"};
 const sP=(k,v)=>{try{localStorage.setItem(K[k],JSON.stringify(v))}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true)}};
 const sM=()=>sP("m",M),sU=()=>sP("u",U),sR=()=>sP("req",REQ),sC=()=>sP("cnt",CNT),sMin=()=>sP("min",MIN);
+const sF=()=>sP("fila",FILA),sS=()=>sP("sync",SYNC);
 /* Leitura tolerante do armazenamento (tipo errado ou JSON corrompido não derruba o app) */
 function lsOK(k,d){
  const r=ls(K[k],undefined);
@@ -128,6 +129,9 @@ let PP=lsOK("P",P.map(p=>p.slice()));
 if(ls(K.P,undefined)===undefined)sP("P",PP);
 let MIN=lsOK("min",{}),M=lsOK("m",[]),U=lsOK("u",[]),REQ=lsOK("req",[]),CNT=normCnt(lsOK("cnt",{})),AUD=lsOK("aud",[]);
 let cur=null,mode="out",qty=1,sc=null,last="",lastT=0,audioCtx=null,idx={};
+/* ETAPA 3 — fila de envio: só sai daqui depois que o servidor confirma */
+let FILA=lsOK("fila",[]);
+let SYNC=lsOK("sync",{url:"",token:"",desde:0,ultimoOk:0,ultimoErro:""});
 
 const reidx=()=>{idx={};PP.forEach((p,i)=>idx[p[0]]=i)};reidx();
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -150,7 +154,7 @@ function normCode(raw){
 
 /* ===== Movimentações com id, estorno e remoção lógica (backup e desfazer seguros) ===== */
 const vivo=m=>!m.del;
-function reg(t,c,q,x){const m=Object.assign({id:uid(),t,c,q,o:cur.n,u:cur.l,ts:Date.now()},x||{});M.push(m);sM();return m}
+function reg(t,c,q,x){const m=Object.assign({id:uid(),t,c,q,o:cur.n,u:cur.l,ts:Date.now()},x||{});M.push(m);sM();enfileirar(m);return m}
 function estorno(m,mo){
  if(m.est)return null;
  const e=reg("adj",m.c,m.t==="out"?m.q:-m.q,{o:mo||cur.n,u:(mo?"sys":cur.l),est:m.id,obs:"Estorno automático de "+m.id});
@@ -177,7 +181,7 @@ function enter(l){
  if(isA()&&ls(K.ab,true)){if(antes!==d){sP("abd",d);backup()}}
  else if(isA()&&antes!==d)sP("abd",d);
  tab(0)}
-/* Bloqueio após 3 tentativas (o estado fica gravado em mdo_u; o backend do Base44 precisa validar o mesmo) */
+/* Bloqueio após 3 tentativas (o estado fica gravado em mdo_u; a Etapa 4 leva essa validação para a API da Vercel) */
 function falhaTentativa(u){
  u.t=(u.t||0)+1;
  if(u.t>=3){u.st="bloq";u.bloqEm=Date.now();sU();audit("BLOQUEIO",u.l,"3 tentativas incorretas");
@@ -245,14 +249,111 @@ function scan(raw){if(!cur)return;const c=normCode(raw);if(!c)return;
   card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
   draw();return}
  let b=bal()[i];
+ /* ETAPA 3.2 — confirmação clara antes de efetivar (o admin pode desligar em Admin › Dados) */
+ const confirmarBip=ls("mdo_cf",true);
+ if(confirmarBip){
+  const ok=confirm("Confirmar "+(mode==="out"?"BAIXA":mode==="in"?"ENTRADA":"AJUSTE")+"?\n\n"+
+   "Produto: "+p[1]+"\nCódigo: "+c+"\nModelo: "+p[1]+"\nCor: "+(p[2]||"—")+"\nQuantidade: "+qty+"\nSaldo atual: "+b);
+  if(!ok){beep(false);return}
+ }
  if(mode==="out"&&b<qty){
   if(!isA()){REQ.push({id:uid(),c,q:qty,u:cur.l,o:cur.n,ts:Date.now()});sR();beep(false);audit("SOLICITAÇÃO",c,qty);
    card("err","<h3>⛔ Saldo insuficiente ("+b+")</h3><b>"+esc(p[1])+"</b><div class='mu'>Baixa bloqueada. Solicitação enviada ao administrador para aprovação.</div>");draw();return}
   if(!confirm("Saldo insuficiente ("+b+"). Dar baixa mesmo assim?"))return}
  reg(mode,c,qty);b=bal()[i];const mn=MIN[c]||0;
+ audit("MOVIMENTAÇÃO",c,TN[mode]+" "+qty+" un. · "+p[1]+" · "+(p[2]||"—")+" · aparelho "+aparelhoId());
  hit(c);beep(true);
  card(mode==="out"?"okout":"","<h3>"+(mode==="out"?"⬇ Baixa registrada":"⬆ Entrada registrada")+" · "+qty+" un.</h3><div><b>"+esc(p[1])+"</b></div><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Saldo atual</div><div class='big"+(b<0?" neg":"")+"'>"+b+"</div>"+(b<0?"<div class='neg'><b>⚠ Saldo negativo</b></div>":b===0?"<div><b>⚠ Estoque zerado</b></div>":mn&&b<=mn?"<div class='neg'><b>⚠ Abaixo do mínimo ("+mn+")</b></div>":""));
  draw()}
+
+/* ===== ETAPA 3 — Movimentações confiáveis e sincronização ===== */
+/* Toda movimentação entra na fila e só sai dela com a confirmação real do servidor.
+   Sem servidor configurado, o app continua local e diz isso com clareza — nunca finge sincronizar. */
+function aparelhoId(){
+ let a=ls("mdo_ap",null);
+ if(!a){a="ap_"+uid();sv("mdo_ap",a)}
+ return a;
+}
+function syncAtivo(){return !!(SYNC.url&&SYNC.token)}
+function syncStatus(){
+ const el=$("syS");if(!el)return;
+ const p=FILA.length;
+ let t;
+ if(!syncAtivo())t="⚪ Sincronização desligada — tudo fica neste aparelho. Configure em Admin › Sincronização.";
+ else if(p)t="🟡 "+p+" operação"+(p>1?"s":"")+" aguardando confirmação do servidor.";
+ else if(SYNC.ultimoErro)t="🔴 Último envio falhou: "+SYNC.ultimoErro+". Tentando de novo.";
+ else t="🟢 Tudo confirmado pelo servidor"+(SYNC.ultimoOk?" · "+fmt(SYNC.ultimoOk):"")+".";
+ el.textContent=t;
+ const b=$("syB");if(b)b.textContent=syncAtivo()?"🔄 Sincronizar agora":"🔄 Sincronizar agora (desligado)";
+}
+/* cabeçalhos com o segredo compartilhado */
+function syncHeaders(){return{"Content-Type":"application/json","X-MDO-Token":SYNC.token}}
+/* põe a movimentação na fila (id único é o que impede duplicidade no reenvio) */
+function enfileirar(m){
+ if(!m||!m.id)return;
+ if(FILA.some(x=>x.id===m.id))return;
+ FILA.push(Object.assign({},m,{aparelho:m.aparelho||aparelhoId()}));
+ sF();syncStatus();
+}
+/* remove da fila só o que o servidor confirmou */
+function confirmar(ids){
+ const set=new Set(ids||[]);
+ FILA=FILA.filter(m=>!set.has(m.id));
+ sF();syncStatus();
+}
+/* envia o lote; devolve o resultado do servidor */
+async function enviarLote(movs){
+ const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/movimentos",{
+  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs})});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
+ return j;
+}
+/* recebe do servidor o que outros aparelhos registraram e junta sem duplicar */
+async function receberNovidades(){
+ const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/estado?desde="+(SYNC.desde||0),{headers:syncHeaders()});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
+ let novos=0;
+ (j.movimentos||[]).forEach(m=>{
+  if(M.some(x=>x.id===m.id))return;
+  M.push(m);novos++;
+ });
+ if(novos){sM();reidx()}
+ SYNC.desde=j.servidorEm||SYNC.desde;sS();
+ return novos;
+}
+/* sincronização completa: envia pendentes e depois busca novidades */
+async function sincronizar(opts){
+ if(!syncAtivo()){syncStatus();return{ok:false,motivo:"desligado"}}
+ const botao=$("syB");if(botao)botao.disabled=true;
+ try{
+  let confirmados=0,recusados=0;
+  if(FILA.length){
+   const j=await enviarLote(FILA.map(m=>Object.assign({},m,{aparelho:m.aparelho||aparelhoId()})));
+   confirmar(j.confirmados||[]);
+   confirmados=(j.confirmados||[]).length;
+   recusados=(j.recusados||[]).length;
+   /* recusado pelo servidor sai da fila e vira aviso: não pode ficar preso para sempre */
+   if(recusados){
+    const ids=new Set((j.recusados||[]).map(x=>x.id));
+    FILA=FILA.filter(m=>!ids.has(m.id));sF();
+    (j.recusados||[]).forEach(x=>avisar("Operação recusada pelo servidor: "+(x.motivo||"motivo não informado"),{alvo:x.id}));
+   }
+  }
+  const novos=await receberNovidades();
+  SYNC.ultimoOk=Date.now();SYNC.ultimoErro="";sS();
+  if(!opts||!opts.silencioso)draw();
+  syncStatus();
+  return{ok:true,confirmados,recusados,novos};
+ }catch(e){
+  SYNC.ultimoErro=(e&&e.message)||"falha de rede";sS();syncStatus();
+  return{ok:false,motivo:SYNC.ultimoErro};
+ }finally{if(botao)botao.disabled=false}
+}
+/* reenvio automático: tenta de novo quando a rede volta */
+window.addEventListener("online",()=>{if(syncAtivo())sincronizar({silencioso:true})});
+setInterval(()=>{if(syncAtivo()&&FILA.length)sincronizar({silencioso:true})},30000);
 
 /* ===== ETAPA 2 — Consulta por câmera e por foto (somente leitura: nunca altera o estoque) ===== */
 const qState={sc:null,leitor:null,ultimo:0,ultimoC:""};
@@ -527,14 +628,27 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
  h+='<div class="card"><h3>🕵 Auditoria (últimos 30)</h3>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></div>';
  h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){const av=ls(avKey,[]).filter(a=>a.lido!==true);return av.map((a,i)=>'<div class="item"><span><b>'+esc(a.m)+'</b><span class="mu">'+fmt(a.ts)+'</span></span><button type="button" class="pill" data-a="av" data-i="'+i+'">Marcar lido</button></div>').join("")||'<div class="mu">Nenhum aviso pendente.</div>'})())+'</div>';
+ h+='<div class="card"><h3>🔄 Sincronização</h3><div class="mu" id="syS"></div>'+
+  '<input class="in" id="syU" placeholder="Endereço do app na Vercel (https://seu-app.vercel.app)" value="'+esc(SYNC.url||"")+'" autocapitalize="none" inputmode="url">'+
+  '<input class="in" id="syT" type="password" placeholder="Segredo compartilhado (SYNC_TOKEN)" value="'+esc(SYNC.token||"")+'" autocapitalize="none">'+
+  '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
+  '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
+  '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
  h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
- $("adm").innerHTML=h}
+ $("adm").innerHTML=h;
+ const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
+ syncStatus()}
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
 $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
  const a=x.dataset.a,i=x.dataset.i;
  act(a,a==="cm"?i:+i)};
 async function act(a,i){
  if(!isA()&&a!=="av")return;
+ if(a==="sySalvar"){
+  const u=String($("syU").value||"").trim().replace(/\/$/,""),t=String($("syT").value||"").trim();
+  if(u&&!/^https:\/\//.test(u))return alert("O endereço precisa começar com https://");
+  SYNC.url=u;SYNC.token=t;sS();audit("SINCRONIZAÇÃO CONFIGURADA",u?"ligada":"desligada");
+  syncStatus();if(syncAtivo())sincronizar({silencioso:true});return}
  if(a==="ok"){const r=REQ[i];if(!r)return;
   /* Registra no nome de quem APROVOU, guardando o solicitante no próprio registro */
   reg("out",r.c,r.q,{ap:cur.l,req:r.o,reqU:r.u});REQ.splice(i,1);sR();audit("APROVAÇÃO",r.c,r.q+" un. pedido por "+r.o)}

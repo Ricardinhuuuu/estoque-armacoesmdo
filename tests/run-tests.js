@@ -298,7 +298,10 @@ pendentes.push(ta("gravação só reescreve a chave alterada", async () => {
   const orig = env.ctx.localStorage.setItem;
   env.ctx.localStorage.setItem = (k, v) => { escritas.push(k); return orig(k, v); };
   run(env, 'mode="out";scan("80202500146")');
-  eq(escritas, ["mdo_m"], "chaves escritas numa bipada:");
+  /* mdo_m = movimentação; mdo_fila = operação pendente de confirmação (Etapa 3);
+     mdo_ap = identificador do aparelho, gravado uma única vez */
+  eq(escritas.sort(), ["mdo_ap", "mdo_aud", "mdo_fila", "mdo_m"], "chaves escritas numa bipada:");
+  eq(escritas.filter((k) => k === "mdo_m").length, 1, "mdo_m deve ser gravado uma vez:");
 }));
 pendentes.push(ta("dedupe aceita dois códigos diferentes em sequência", async () => {
   const env = novo(); await comoAdmin(env); await flush();
@@ -672,6 +675,159 @@ t("2.4 foto ilegível explica a causa provável", () => {
   ["desfocada", "pouca luz", "cortado", "resolução", "formato"].forEach((t) =>
     okv(txt.toLowerCase().includes(t), "a mensagem deveria citar: " + t));
 });
+
+/* ================= ETAPA 3 — MOVIMENTAÇÕES E SINCRONIZAÇÃO ================= */
+const L = require("../api/_lib/movimentos.js");
+const PROD = [
+  { codigo: "A1", descricao: "RX ALFA", cor: "PRETO", inicial: 10 },
+  { codigo: "B2", descricao: "RX BETA", cor: "DEMI", inicial: 0 },
+];
+g("Etapa 3 — movimentações e sincronização");
+t("3.3 saldo = inicial + entradas − saídas", () => {
+  const movs = [
+    { id: "1", t: "in", c: "A1", q: 5 },
+    { id: "2", t: "out", c: "A1", q: 3 },
+    { id: "3", t: "adj", c: "A1", q: -2 },
+  ];
+  eq(L.saldoDe(PROD[0], movs), 10, "saldo final:");
+  eq(L.conferirSaldo(PROD[0], movs, 10).ok, true, "conferência do saldo:");
+  eq(L.conferirSaldo(PROD[0], movs, 11).ok, false, "saldo errado deve ser detectado:");
+});
+t("3.3 movimentação apagada não conta no saldo", () => {
+  const movs = [{ id: "1", t: "out", c: "A1", q: 4 }, { id: "2", t: "out", c: "A1", q: 4, del: true }];
+  eq(L.saldoDe(PROD[0], movs), 6, "saldo:");
+});
+t("3.4 reenvio do mesmo id não duplica a operação", () => {
+  const lote = [{ id: "x1", t: "out", c: "A1", q: 2, u: "op", o: "Operador" }];
+  const p1 = L.aplicarLote(PROD, [], lote);
+  eq(p1.aceitos.length, 1, "primeira vez aceita:");
+  const p2 = L.aplicarLote(PROD, p1.aceitos, lote);
+  eq(p2.aceitos.length, 0, "segunda vez não pode aceitar:");
+  eq(p2.repetidos.length, 1, "deve ser reportado como repetido:");
+  eq(p2.saldos.get("A1"), 8, "saldo depois do reenvio:");
+});
+t("3.4 dois aparelhos ao mesmo tempo mantêm a conta certa", () => {
+  /* aparelho 1 e aparelho 2 bipam sem saber um do outro; o servidor recebe os dois lotes */
+  const a = L.aplicarLote(PROD, [], [{ id: "a1", t: "out", c: "A1", q: 3 }]);
+  const b = L.aplicarLote(PROD, a.aceitos, [{ id: "b1", t: "out", c: "A1", q: 4 }]);
+  eq(b.saldos.get("A1"), 3, "saldo somando os dois aparelhos:");
+  const c = L.aplicarLote(PROD, b.aceitos, [{ id: "a1", t: "out", c: "A1", q: 3 }]);
+  eq(c.saldos.get("A1"), 3, "reenvio do aparelho 1 não pode descontar de novo:");
+});
+t("3.3 baixa acima do saldo é recusada com o saldo real", () => {
+  const r = L.aplicarLote(PROD, [], [{ id: "z1", t: "out", c: "A1", q: 50 }]);
+  eq(r.aceitos.length, 0, "não pode aceitar:");
+  eq(r.recusados[0].motivo, "saldo insuficiente", "motivo:");
+  eq(r.recusados[0].saldo, 10, "saldo informado:");
+});
+t("3.3 baixa acima do saldo aceita quando o administrador força", () => {
+  const r = L.aplicarLote(PROD, [], [{ id: "z2", t: "out", c: "A1", q: 12 }], { forcar: true });
+  eq(r.aceitos.length, 1, "aceitos:");
+  eq(r.saldos.get("A1"), -2, "saldo pode ficar negativo:");
+});
+t("3.4 produto fora do cadastro é recusado, não inventado", () => {
+  const r = L.aplicarLote(PROD, [], [{ id: "n1", t: "out", c: "ZZZ", q: 1 }]);
+  eq(r.recusados[0].motivo, "produto não cadastrado", "motivo:");
+});
+t("3.4 movimento sem id ou com quantidade inválida é recusado", () => {
+  eq(L.validarMovimento({ t: "out", c: "A1", q: 1 }, PROD).ok, false, "sem id:");
+  eq(L.validarMovimento({ id: "1", t: "out", c: "A1", q: 0 }, PROD).ok, false, "quantidade zero:");
+  eq(L.validarMovimento({ id: "1", t: "xx", c: "A1", q: 1 }, PROD).ok, false, "tipo inválido:");
+  eq(L.validarMovimento({ id: "1", t: "out", c: "A1", q: 1.5 }, PROD).ok, false, "quantidade fracionada:");
+});
+t("3.6 auditoria guarda usuário, hora, produto, quantidade, tipo e aparelho", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const a=AUD.length;
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const reg=AUD[AUD.length-1];
+      return {antes:a, agora:AUD.length, reg, fila:FILA.length, ap:FILA[FILA.length-1].aparelho};
+    })()`);
+    okv(r.agora > r.antes, "nada foi auditado");
+    eq(r.reg.acao, "MOVIMENTAÇÃO", "ação auditada:");
+    okv(r.reg.por && r.reg.por.length > 0, "falta o responsável");
+    okv(r.reg.extra.includes("BAIXA"), "falta o tipo");
+    okv(r.reg.extra.includes("un."), "falta a quantidade");
+    okv(/aparelho ap_/.test(r.reg.extra), "falta o aparelho");
+    okv(r.reg.ts > 0, "falta a data/hora");
+  }));
+t("3.5 operação só sai da fila quando o servidor confirma", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const id=FILA[FILA.length-1].id;
+      const antes=FILA.length;
+      confirmar([]);            // resposta sem confirmação
+      const semConfirma=FILA.length;
+      confirmar([id]);          // servidor confirmou este id
+      return {antes,semConfirma,depois:FILA.length,aindaTem:FILA.some(m=>m.id===id)};
+    })()`);
+    eq(r.semConfirma, r.antes, "sem confirmação a fila não pode diminuir:");
+    okv(r.depois < r.antes, "com confirmação a operação deve sair da fila");
+    eq(r.aindaTem, false, "o id confirmado não pode continuar pendente:");
+  }));
+t("3.5 sem servidor o app continua local e não finge sincronizar", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const antes=JSON.stringify(bal());
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const sinc=sincronizar();
+      return {sinc, ativo:syncAtivo(), depois:JSON.stringify(bal()), antes, fila:FILA.length};
+    })()`);
+    return Promise.resolve(r.sinc).then((res) => {
+      eq(res.motivo, "desligado", "deve dizer que está desligado:");
+      eq(r.ativo, false, "não pode estar ativo sem endereço e segredo");
+      okv(r.fila > 0, "a operação fica na fila aguardando");
+      okv(r.depois !== r.antes, "a bipagem local continua funcionando");
+    });
+  }));
+t("3.4/3.5 reenvio após falha de rede confirma o que faltava", () =>
+  adminPronto(novo()).then((env) => {
+    /* servidor simulado: primeiro cai, depois responde confirmando */
+    const r = run(env, `(async()=>{
+      SYNC.url="https://exemplo.vercel.app";SYNC.token="segredo";SYNC.desde=0;
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const pendentesAntes=FILA.length;
+      let chamadas=0;
+      window.fetch=async(url,opt)=>{
+        chamadas++;
+        if(chamadas===1)throw new Error("sem rede");
+        if(String(url).includes("/api/movimentos")){
+          const corpo=JSON.parse(opt.body);
+          return {ok:true,status:200,json:async()=>({ok:true,confirmados:corpo.movimentos.map(m=>m.id),repetidos:[],recusados:[]})};
+        }
+        return {ok:true,status:200,json:async()=>({ok:true,produtos:[],movimentos:[],servidorEm:Date.now()})};
+      };
+      const falha=await sincronizar({silencioso:true});
+      const filaDepoisDaFalha=FILA.length;
+      const ok=await sincronizar({silencioso:true});
+      return {pendentesAntes,falha,filaDepoisDaFalha,ok,filaFinal:FILA.length,erro:SYNC.ultimoErro};
+    })()`);
+    return Promise.resolve(r).then((x) => {
+      okv(x.pendentesAntes > 0, "deveria haver pendente");
+      eq(x.falha.ok, false, "a primeira tentativa deve falhar:");
+      eq(x.filaDepoisDaFalha, x.pendentesAntes, "falha de rede não pode limpar a fila:");
+      eq(x.ok.ok, true, "a segunda tentativa deve funcionar:");
+      eq(x.filaFinal, 0, "tudo confirmado sai da fila:");
+    });
+  }));
+t("3.4 novidades de outro aparelho entram sem duplicar", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(async()=>{
+      SYNC.url="https://exemplo.vercel.app";SYNC.token="s";SYNC.desde=0;
+      const antes=M.length;
+      const doServidor=[{id:"outro1",t:"out",c:PP[0][0],q:1,u:"op2",o:"Outro",ts:Date.now()},{id:"outro1",t:"out",c:PP[0][0],q:1,u:"op2",o:"Outro",ts:Date.now()}];
+      window.fetch=async()=>({ok:true,status:200,json:async()=>({ok:true,produtos:[],movimentos:doServidor,servidorEm:Date.now()})});
+      const n=await receberNovidades();
+      const n2=await receberNovidades();
+      return {antes,depois:M.length,n,n2};
+    })()`);
+    return Promise.resolve(r).then((x) => {
+      eq(x.n, 1, "duas cópias do mesmo id devem virar uma:");
+      eq(x.n2, 0, "repetir a leitura não pode duplicar:");
+      eq(x.depois - x.antes, 1, "entrou exatamente uma movimentação:");
+    });
+  }));
 
 (async () => {
   await Promise.all(pendentes);

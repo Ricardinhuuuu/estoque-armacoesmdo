@@ -78,7 +78,9 @@ function makeEnv(opts = {}) {
   const log = { alerts: [], toasts: [] };
   const ctx = {
     document, localStorage, console,
-    navigator: { vibrate() {}, mediaDevices: undefined, userAgent: "node" },
+    navigator: { vibrate() {}, mediaDevices: undefined, userAgent: "node", onLine: true },
+    addEventListener() {}, removeEventListener() {},
+    fetch: async () => { throw new Error("rede indisponível no teste"); },
     window: {}, URL: { createObjectURL: () => "blob:x", revokeObjectURL() {} },
     Blob: class { constructor() {} },
     /* timers de verdade, como no navegador: o app usa corridas com tempo limite */
