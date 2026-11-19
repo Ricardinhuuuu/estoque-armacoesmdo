@@ -1281,6 +1281,118 @@ t("10.1 nenhuma descrição é inventada: campo vazio cancela o cadastro", () =>
     eq(r.depois, r.antes, "sem descrição digitada o produto não pode ser criado:");
   }));
 
+/* ================= SEÇÃO 10.2 — MOVIMENTAÇÕES POR OPERADOR E DIVERGÊNCIAS ================= */
+g("Seção 10.2 — movimentações por operador e divergências");
+t("10.2 mostra quem movimentou cada produto", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      M.push({id:"a1",t:"out",c:PP[0][0],q:1,o:"Ana Souza",u:"ana",ts:Date.now()});
+      M.push({id:"a2",t:"in",c:PP[1][0],q:2,o:"Ana Souza",u:"ana",ts:Date.now()});
+      M.push({id:"b1",t:"out",c:PP[0][0],q:1,o:"Bruno Lima",u:"bruno",ts:Date.now()});
+      OPC.dias=30;OPC.login="";
+      const d=opDados();
+      const ana=d.operadores.find(o=>o.login==="ana");
+      return {nomes:d.operadores.map(o=>o.login), produtosAna:Object.keys(ana.produtos).length, totalAna:ana.total};
+    })()`);
+    okv(r.nomes.includes("ana") && r.nomes.includes("bruno"), "os dois operadores devem aparecer");
+    eq(r.totalAna, 2, "movimentações da Ana:");
+    eq(r.produtosAna, 2, "produtos distintos da Ana:");
+  }));
+t("10.2 divergência: saldo negativo aparece", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      M.push({id:"neg",t:"out",c:PP[0][0],q:999,o:"Ana",u:"ana",ts:Date.now()});
+      sM();OPC.dias=30;
+      const d=opDados();
+      return d.divergencias.filter(x=>x.tipo==="saldo negativo").length;
+    })()`);
+    okv(r >= 1, "saldo negativo precisa aparecer como divergência");
+  }));
+t("10.2 divergência: estorno feito por outro operador", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const m={id:"orig",t:"out",c:PP[0][0],q:1,o:"Ana",u:"ana",ts:Date.now()};
+      M.push(m);sM();
+      M.push({id:"est1",t:"adj",c:PP[0][0],q:1,o:"Bruno",u:"bruno",ts:Date.now(),est:"orig"});
+      OPC.dias=30;
+      const d=opDados();
+      return d.divergencias.filter(x=>x.tipo==="estorno de outro operador").length;
+    })()`);
+    okv(r >= 1, "estorno por outro operador precisa ser apontado");
+  }));
+t("10.2 operador não vê o painel de operadores", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{drawOperadores();return {html:$("opRel").innerHTML, admin:isA()};})()`);
+    eq(r.admin, false, "não é administrador");
+    eq(r.html, "", "operador não pode ver o painel:");
+  }));
+t("10.2 período sem movimentação não inventa operador", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      M.length=0;
+      OPC.dias=7;
+      const d=opDados();
+      return {ops:d.operadores.length, div:d.divergencias.filter(x=>x.tipo==="saldo negativo").length};
+    })()`);
+    eq(r.ops, 0, "sem movimentação não há operador:");
+  }));
+
+/* ================= SEÇÃO 10.3 — PRODUTO SEM MOVIMENTAÇÃO ================= */
+g("Seção 10.3 — aviso de produto sem movimentação");
+t("10.3 desligado por padrão não lista nada", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{PARADO.dias=0;return {lista:parados(0).length, dias:paradoDias()};})()`);
+    eq(r.dias, 0, "período inicial desligado:");
+    eq(r.lista, 0, "desligado não lista produto:");
+  }));
+t("10.3 lista só quem não movimentou no período escolhido", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const velho=Date.now()-100*86400000;
+      PP[0][3]=Math.max(1,+PP[0][3]||0);   /* garante estoque inicial para o produto aparecer */
+      M.push({id:"v1",t:"in",c:PP[0][0],q:5,o:"Ana",u:"ana",ts:velho});
+      M.push({id:"n1",t:"in",c:PP[1][0],q:5,o:"Ana",u:"ana",ts:Date.now()});
+      sM();
+      const p30=parados(30).map(x=>x.codigo), p200=parados(200).map(x=>x.codigo);
+      const piso=PP.filter((x,i)=>(+x[3]||0)>0).length;
+      return {p30,p200,c0:PP[0][0],c1:PP[1][0],total:PP.length,piso};
+    })()`);
+    okv(r.p30.includes(r.c0), "o produto com 100 dias sem movimento deve aparecer em 30 dias");
+    okv(!r.p30.includes(r.c1), "o produto movimentado hoje não pode aparecer");
+    /* a lista de parados só considera produto com estoque inicial > 0 */
+    okv(r.p200.length >= Math.min(1, r.piso), "com 200 dias os produtos antigos continuam listados (" + r.p200.length + " de " + r.piso + " com estoque)");
+  }));
+t("10.3 período é configurável e fica salvo", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      PARADO.dias=60;PARADO.ativo=true;sv("mdo_parado",PARADO);
+      const g=JSON.parse(localStorage.getItem("mdo_parado"));
+      return g;
+    })()`);
+    eq(r.dias, 60, "período salvo:");
+    eq(r.ativo, true, "aviso ativo:");
+  }));
+t("10.3 o aviso entra no painel de alertas uma vez por dia", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      PARADO.dias=30;
+      const velho=Date.now()-100*86400000;
+      M.push({id:"v2",t:"in",c:PP[0][0],q:5,o:"Ana",u:"ana",ts:velho});sM();
+      const n1=alertas();      /* quantidade de avisos novos no primeiro dia */
+      const n2=alertas();      /* no mesmo dia não pode repetir */
+      const avisos=ls("mdo_av",[]).filter(a=>String(a.m).indexOf("sem movimentação")>=0);
+      return {n1,n2,qtdAvisos:avisos.length};
+    })()`);
+    okv(r.qtdAvisos >= 1, "o aviso de produto parado precisa ser registrado:");
+    eq(r.n2, 0, "não pode repetir no mesmo dia:");
+  }));
+t("10.3 operador não vê o cartão de produtos parados", () =>
+  operadorPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{drawParados();return {html:$("parCard").innerHTML,admin:isA()};})()`);
+    eq(r.admin, false, "não é administrador");
+    eq(r.html, "", "operador não pode ver o cartão:");
+  }));
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
