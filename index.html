@@ -85,11 +85,23 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <button class="btn ghost" id="undo">↩ Desfazer última bipada</button>
 </section>
 <section id="s1" class="sec"><div class="sum"><div><b id="tP">0</b><span class="mu">produtos</span></div><div><b id="tN">0</b><span class="mu">zerados/neg.</span></div><div><b id="tQ">0</b><span class="mu">peças</span></div></div>
+<div class="card"><div class="mu" style="margin-bottom:6px">Painel — toque em um número para ver a lista</div>
+<div id="pCart" class="row" style="gap:6px;flex-wrap:wrap"></div>
+<div class="mu" id="pUlt" style="margin-top:8px"></div></div>
 <div class="card"><input id="q" class="in" style="margin:0 0 8px" placeholder="🔎 Buscar por código, modelo ou cor">
 <div id="qB"><button class="btn ghost" id="qCam" style="margin-top:0">📷 Buscar por código de barras</button><button class="btn ghost" id="qPho">📸 Buscar por foto</button></div>
 <div id="qC"></div><div id="qRes"></div><div class="mu" id="qMsg" style="margin-top:8px"></div></div>
 <div id="lst"></div></section>
-<section id="s2" class="sec"><div class="card" id="log"></div></section>
+<section id="s2" class="sec"><div class="card"><div class="mu" style="margin-bottom:6px">Filtros do histórico</div>
+<div class="row" style="gap:6px;flex-wrap:wrap">
+<input class="in" id="hQ" style="margin:0;flex:1 1 140px" placeholder="🔎 Produto, código, cor ou operador">
+<select class="in" id="hT" style="margin:0;flex:1 1 110px"><option value="">Todos os tipos</option><option value="in">Entrada</option><option value="out">Saída</option><option value="adj">Ajuste</option><option value="est">Estorno</option></select>
+<select class="in" id="hP" style="margin:0;flex:1 1 110px"><option value="0">Todo o período</option><option value="1">Hoje</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select>
+<button type="button" class="btn ghost" id="hL" style="width:auto">Limpar</button>
+</div>
+<div class="mu" id="hN" style="margin:8px 0"></div>
+<button type="button" class="btn ghost" id="hX">⬇ Exportar o que está filtrado (CSV)</button></div>
+<div class="card" id="log"></div></section>
 <section id="s3" class="sec"><div id="adm"></div></section>
 </main>
 <nav><button data-t="0" class="on">📷 Bipar</button><button data-t="1">📋 Estoque</button><button data-t="2">🕒 Log</button><button data-t="3" id="tAdm" style="display:none">👑 Admin</button></nav>
@@ -105,14 +117,18 @@ function csv(name,rows){
  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url)},100);
 }
 const $=id=>document.getElementById(id);
-const ls=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
+const ls=(k,d)=>{try{const v=localStorage.getItem(k);if(v!=null)return JSON.parse(v);
+  const nome=Object.keys(K).find(x=>K[x]===k);
+  if(nome&&KV[nome]!=null)return JSON.parse(KV[nome]);
+  return d}catch(e){return d}};
 const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const fmt=ts=>new Date(ts).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"medium"});
 const avKey="mdo_av";
 async function H(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("mdo|"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=5381;for(const ch of "mdo|"+s)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
 const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess"};
-const sP=(k,v)=>{try{localStorage.setItem(K[k],JSON.stringify(v))}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true)}};
+const KV={}; /* última gravação de cada chave: mantém as leituras coerentes mesmo sem armazenamento */
+const sP=(k,v)=>{try{KV[k]=JSON.stringify(v);localStorage.setItem(K[k],JSON.stringify(v))}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true)}};
 const sM=()=>sP("m",M),sU=()=>sP("u",U),sR=()=>sP("req",REQ),sC=()=>sP("cnt",CNT),sMin=()=>sP("min",MIN);
 const sF=()=>sP("fila",FILA),sS=()=>sP("sync",SYNC);
 /* Leitura tolerante do armazenamento (tipo errado ou JSON corrompido não derruba o app) */
@@ -250,6 +266,7 @@ function scan(raw){if(!cur)return;const c=normCode(raw);if(!c)return;
  const i=idx[c],p=PP[i];
  if(mode==="cnt"){
   CNT[c]={q:(CNT[c]?CNT[c].q||0:0)+qty,l:cur.l,n:cur.n,ts:Date.now()};sC();hit(c);beep(true);
+  if(typeof invContar==="function")invContar(c,qty);
   card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
   draw();return}
  let b=bal()[i];
@@ -266,6 +283,7 @@ function scan(raw){if(!cur)return;const c=normCode(raw);if(!c)return;
   if(!confirm("Saldo insuficiente ("+b+"). Dar baixa mesmo assim?"))return}
  reg(mode,c,qty);b=bal()[i];const mn=MIN[c]||0;
  audit("MOVIMENTAÇÃO",c,TN[mode]+" "+qty+" un. · "+p[1]+" · "+(p[2]||"—")+" · aparelho "+aparelhoId());
+ if(typeof alertas==="function")alertas();
  hit(c);beep(true);
  card(mode==="out"?"okout":"","<h3>"+(mode==="out"?"⬇ Baixa registrada":"⬆ Entrada registrada")+" · "+qty+" un.</h3><div><b>"+esc(p[1])+"</b></div><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Saldo atual</div><div class='big"+(b<0?" neg":"")+"'>"+b+"</div>"+(b<0?"<div class='neg'><b>⚠ Saldo negativo</b></div>":b===0?"<div><b>⚠ Estoque zerado</b></div>":mn&&b<=mn?"<div class='neg'><b>⚠ Abaixo do mínimo ("+mn+")</b></div>":""));
  draw()}
@@ -359,6 +377,325 @@ async function sincronizar(opts){
 window.addEventListener("online",()=>{if(syncAtivo())sincronizar({silencioso:true})});
 setInterval(()=>{if(syncAtivo()&&FILA.length)sincronizar({silencioso:true})},30000);
 
+/* ===== ETAPA 5 — Painel, histórico, relatórios, inventário, alertas e Power BI ===== */
+/* Filtro do histórico (7.3). Vale para a aba Log e para a exportação. */
+const HF={q:"",t:"",dias:0};
+function dentroPeriodo(ts,dias){
+ if(!dias)return true;
+ const d=new Date(),ini=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+ if(dias===1)return ts>=ini;
+ return ts>=ini-(dias-1)*86400000;
+}
+function histFiltrado(){
+ const q=String(HF.q||"").toLowerCase().trim(),t=HF.t,dias=Number(HF.dias)||0;
+ return (isA()?M:M.filter(m=>m.u===cur.l)).filter(vivo).filter(m=>{
+  if(t==="est"){if(!m.est)return false}
+  else if(t&&m.t!==t)return false;
+  if(!dentroPeriodo(Number(m.ts)||0,dias))return false;
+  if(q){
+   const p=PP[idx[m.c]];
+   const txt=((p?p[0]+" "+p[1]+" "+p[2]:m.c)+" "+(m.o||"")+" "+(m.u||"")).toLowerCase();
+   if(!txt.includes(q))return false;
+  }
+  return true;
+ }).sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function histCSV(){
+ const L=histFiltrado();
+ if(!L.length){toast("Nenhuma movimentação no filtro atual.",true);return 0}
+ const linhas=[["Data e hora","Tipo","Codigo","Produto","Cor","Quantidade","Operador","Login","Aparelho"]];
+ L.forEach(m=>{const p=PP[idx[m.c]];
+  linhas.push([fmt(m.ts),m.est?"ESTORNO":TN[m.t],m.c,p?p[1]:"",p?p[2]:"",m.q,m.o||"",m.u||"",m.aparelho||""])});
+ csv("historico_mdo_"+new Date().toISOString().slice(0,10)+".csv",linhas);
+ audit("EXPORTAÇÃO",'histórico',L.length+" linhas");
+ return L.length;
+}
+/* 7.2 — indicadores calculados dos dados reais, nunca fixos */
+function painelDados(){
+ const b=bal(),hoje0=(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()})();
+ const vivos=M.filter(vivo);
+ let baixo=0,zerado=0,disp=0,unid=0;
+ PP.forEach((p,i)=>{const v=b[i],mn=MIN[p[0]]||0;
+  if(v>0)disp++;
+  if(v<=0)zerado++;
+  if(mn&&v<=mn)baixo++;
+  unid+=v});
+ const doDia=vivos.filter(m=>(m.ts||0)>=hoje0);
+ return{
+  produtos:PP.length,disponiveis:disp,baixo,zerado,unidades:unid,
+  entradas:doDia.filter(m=>m.t==="in").reduce((a,m)=>a+Math.abs(m.q),0),
+  saidas:doDia.filter(m=>m.t==="out").reduce((a,m)=>a+Math.abs(m.q),0),
+  pendentes:REQ.length,
+  ultimas:vivos.slice(-5).reverse()
+ };
+}
+function pCartao(id,rot,val,cls){
+ return'<button type="button" class="btn ghost" data-a="pVer" data-id="'+id+'" style="width:auto;text-align:left;padding:8px 10px">'+
+  '<b style="font-size:18px'+(cls?'':"")+'">'+val+'</b><div class="mu" style="font-size:11px">'+esc(rot)+'</div></button>';
+}
+function drawPainel(){
+ const el=$("pCart");if(!el)return;
+ const d=painelDados();
+ el.innerHTML=
+  pCartao("produtos","produtos",d.produtos)+
+  pCartao("disponiveis","disponíveis",d.disponiveis)+
+  pCartao("baixo","estoque baixo",d.baixo)+
+  pCartao("zerado","zerados",d.zerado)+
+  pCartao("entradas","entradas hoje",d.entradas)+
+  pCartao("saidas","saídas hoje",d.saidas)+
+  pCartao("pendentes","pendentes de aprovação",d.pendentes);
+ const u=$("pUlt");
+ if(u)u.textContent=d.ultimas.length?"Últimas: "+d.ultimas.map(m=>{const p=PP[idx[m.c]];return (p?p[1]:m.c)+" "+TN[m.t]+" "+m.q}).join(" · "):"Sem movimentações ainda.";
+ el.querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>painelVer(b.dataset.id));
+}
+/* abrir a lista correspondente ao indicador */
+function painelVer(id){
+ const b=bal();
+ const filtros={
+  produtos:()=>PP.map((p,i)=>[p,b[i]]),
+  disponiveis:()=>PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v>0),
+  baixo:()=>PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]),
+  zerado:()=>PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v<=0)
+ };
+ const f=filtros[id];
+ if(f){
+  const lista=f();
+  $("q").value="";
+  $("lst").innerHTML=lista.length?lista.map(([p,v])=>'<div class="item"><span><b>'+esc(p[1])+'</b><span class="mu">'+esc(p[2])+' · '+esc(p[0])+'</span></span><span class="pill '+(v<=0?"z":(MIN[p[0]]&&v<=MIN[p[0]]?"n":""))+'">'+v+'</span></div>').join(""):'<div class="mu">Nada nesta lista.</div>';
+  return;
+ }
+ if(id==="pendentes"){tab(3);return}
+ const hoje0=(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()})();
+ HF.q="";HF.t=id==="entradas"?"in":"out";HF.dias=1;
+ const e=$("hQ"),t=$("hT"),p=$("hP");if(e)e.value="";if(t)t.value=HF.t;if(p)p.value="1";
+ tab(2);
+}
+/* 7.4 — relatórios a partir das movimentações reais */
+function relPeriodo(){
+ const dias=Number(REL.dias)||30;
+ const d=new Date(),ini=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()-(dias-1)*86400000;
+ return M.filter(vivo).filter(m=>(m.ts||0)>=ini);
+}
+let REL={dias:30};
+function relDados(){
+ const movs=relPeriodo(),b=bal();
+ const porProduto={},porOperador={};
+ movs.forEach(m=>{
+  const p=PP[idx[m.c]],nome=p?p[1]+" "+p[2]:m.c;
+  const o=porProduto[m.c]||(porProduto[m.c]={nome,codigo:m.c,entradas:0,saidas:0,ajustes:0,total:0});
+  if(m.t==="in")o.entradas+=Math.abs(m.q);else if(m.t==="out")o.saidas+=Math.abs(m.q);else o.ajustes+=Math.abs(m.q);
+  o.total++;
+  const k=m.u||"-",op=porOperador[k]||(porOperador[k]={login:k,nome:m.o||k,entradas:0,saidas:0,total:0});
+  if(m.t==="in")op.entradas+=Math.abs(m.q);else if(m.t==="out")op.saidas+=Math.abs(m.q);
+  op.total++;
+ });
+ const semMov=PP.filter((p,i)=>{if(!movs.some(m=>m.c===p[0]))return true;return false});
+ return{
+  periodo:REL.dias,
+  produtos:Object.values(porProduto).sort((a,b2)=>b2.total-a.total),
+  operadores:Object.values(porOperador).sort((a,b2)=>b2.total-a.total),
+  baixo:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]),
+  zerados:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v<=0),
+  semMov,
+  ajustes:movs.filter(m=>m.t==="adj").length,
+  entradas:movs.filter(m=>m.t==="in").reduce((a,m)=>a+Math.abs(m.q),0),
+  saidas:movs.filter(m=>m.t==="out").reduce((a,m)=>a+Math.abs(m.q),0)
+ };
+}
+function drawRel(){
+ const el=$("rel");if(!el)return;
+ const d=relDados();
+ let h='<div class="card"><h3>📊 Relatórios</h3><div class="row" style="gap:6px;flex-wrap:wrap">'+
+  [7,30,90].map(n=>'<button type="button" class="btn'+(d.periodo===n?"":" ghost")+'" data-a="relP" data-n="'+n+'" style="width:auto">'+n+' dias</button>').join("")+
+  '</div><div class="mu" style="margin-top:6px">Entradas: <b>'+d.entradas+'</b> · Saídas: <b>'+d.saidas+'</b> · Ajustes: <b>'+d.ajustes+'</b></div></div>';
+ h+='<div class="card"><h3>🏆 Mais movimentados ('+d.produtos.length+')</h3>'+
+  (d.produtos.slice(0,10).map(p=>'<div class="item"><span><b>'+esc(p.nome)+'</b><span class="mu">'+esc(p.codigo)+' · '+p.total+' mov.</span></span><span class="pill">'+p.saidas+' saídas</span></div>').join("")||'<div class="mu">Sem movimentação no período.</div>')+'</div>';
+ h+='<div class="card"><h3>👤 Por operador</h3>'+
+  (d.operadores.map(o=>'<div class="item"><span><b>'+esc(o.nome)+'</b><span class="mu">'+esc(o.login)+' · '+o.total+' mov.</span></span><span class="mu">⬆ '+o.entradas+' · ⬇ '+o.saidas+'</span></div>').join("")||'<div class="mu">Sem movimentação no período.</div>')+'</div>';
+ h+='<div class="card"><h3>⚠ Estoque baixo ('+d.baixo.length+') · zerados ('+d.zerados.length+')</h3>'+
+  (d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")||'<div class="mu">Nenhum abaixo do mínimo.</div>')+'</div>';
+ h+='<div class="card"><h3>😴 Sem movimentação no período ('+d.semMov.length+')</h3>'+
+  (d.semMov.slice(0,20).map(p=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="mu">'+esc(p[0])+'</span></div>').join("")||'<div class="mu">Todos movimentaram.</div>')+'</div>';
+ el.innerHTML=h;
+ el.querySelectorAll("[data-a='relP']").forEach(b=>b.onclick=()=>{REL.dias=Number(b.dataset.n);drawRel()});
+}
+/* 7.1 — inventário com responsável, divergências e histórico */
+let INV={ativo:false,resp:"",ini:0,itens:{},hist:[]};
+function invSalvar(){sP("inv",INV)}
+function invIniciar(){
+ if(!isA())return toast("Só o administrador inicia um inventário.",true);
+ const r=prompt("Responsável pelo inventário:",cur.n);
+ if(!r)return;
+ INV={ativo:true,resp:String(r).trim(),ini:Date.now(),itens:{},hist:ls("mdo_invh",[])};
+ invSalvar();audit("INVENTÁRIO INICIADO","",INV.resp);drawRel();toast("Inventário iniciado. Use o modo Contagem na aba Bipar.")}
+function invContar(c,q){
+ if(!INV.ativo)return;
+ INV.itens[c]=(INV.itens[c]||0)+(q||1);
+ invSalvar();
+}
+function invResumo(){
+ const b=bal();
+ return Object.keys(INV.itens||{}).map(c=>{
+  const i=idx[c],contado=INV.itens[c],sistema=i==null?0:b[i];
+  return{codigo:c,modelo:i==null?"(fora do cadastro)":PP[i][1],cor:i==null?"":PP[i][2],contado,sistema,dif:contado-sistema};
+ });
+}
+function invConcluir(){
+ if(!isA())return;
+ /* a contagem é feita no modo Contagem; se só houver CNT, ele é o inventário */
+ if(!Object.keys(INV.itens||{}).length&&Object.keys(CNT||{}).length)INV.itens=Object.assign({},CNT);
+ const r=invResumo();
+ if(!r.length)return toast("Nada contado ainda.",true);
+ const div=r.filter(x=>x.dif!==0);
+ if(!confirm("Concluir o inventário de "+INV.resp+"?\n\n"+r.length+" produto(s) contado(s), "+div.length+" com divergência.\nO estoque NÃO muda agora: o ajuste precisa da sua confirmação em seguida."))return;
+ const hist=ls("mdo_invh",[]);
+ hist.push({id:uid(),resp:INV.resp,ini:INV.ini,fim:Date.now(),itens:r});
+ sP("invh",hist);
+ try{localStorage.setItem("mdo_invh",JSON.stringify(hist))}catch(e){}
+ INV.hist=hist;
+ /* o que foi concluído sai da contagem corrente: o próximo inventário começa zerado */
+ CNT={};sC();
+ audit("INVENTÁRIO CONCLUÍDO","",INV.resp+" · "+r.length+" itens · "+div.length+" divergências");
+ INV.ativo=false;invSalvar();drawRel();
+}
+/* 7.5 — alertas sem repetição */
+function alertas(){
+ const b=bal(),av=ls(avKey,[]),hoje=new Date().toISOString().slice(0,10);
+ const jaTem=m=>av.some(a=>a.m===m&&a.dia===hoje);
+ const novos=[];
+ PP.forEach((p,i)=>{
+  const v=b[i],mn=MIN[p[0]]||0;
+  if(v<=0){const m="Estoque zerado: "+p[1]+" "+p[2];if(!jaTem(m))novos.push(m)}
+  else if(mn&&v<=mn){const m="Estoque baixo: "+p[1]+" "+p[2]+" ("+v+", mín. "+mn+")";if(!jaTem(m))novos.push(m)}
+ });
+ if(FILA.length){const m="Falha de sincronização: "+FILA.length+" operação(ões) não confirmada(s)";if(!jaTem(m))novos.push(m)}
+ if(REQ.length){const m="Movimentações pendentes de aprovação: "+REQ.length;if(!jaTem(m))novos.push(m)}
+ novos.forEach(m=>{
+  av.push({id:uid(),m,ts:Date.now(),lido:false,dia:hoje});
+ });
+ if(novos.length){sAv(av);if(isA())toast(novos[0]+(novos.length>1?" (+"+(novos.length-1)+")":""))}
+ return novos.length;
+}
+/* 7.6 — Relatório estilo Power BI: só administrador, somente leitura, dados reais */
+const PBI={periodo:30,tipo:"",operador:"",modelo:"",cor:"",cruz:null};
+function pbiBase(){
+ const d=new Date(),ini=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()-(PBI.periodo-1)*86400000;
+ return M.filter(vivo).filter(m=>(m.ts||0)>=ini);
+}
+/* aplica os filtros do topo + o filtro cruzado do clique */
+function pbiFiltrado(ignorar){
+ const base=pbiBase();
+ return base.filter(m=>{
+  const p=PP[idx[m.c]];
+  if(PBI.tipo&&m.t!==PBI.tipo)return false;
+  if(PBI.operador&&m.u!==PBI.operador)return false;
+  if(PBI.modelo&&(!p||p[1]!==PBI.modelo))return false;
+  if(PBI.cor&&(!p||p[2]!==PBI.cor))return false;
+  if(PBI.cruz&&PBI.cruz!==ignorar){
+   if(PBI.cruz.tipo==="dia"&&new Date(m.ts).toISOString().slice(0,10)!==PBI.cruz.v)return false;
+   if(PBI.cruz.tipo==="produto"&&m.c!==PBI.cruz.v)return false;
+   if(PBI.cruz.tipo==="operador"&&m.u!==PBI.cruz.v)return false;
+  }
+  return true;
+ });
+}
+function pbiDados(){
+ const movs=pbiFiltrado(),b=bal();
+ const dias={},produtos={},operadores={},grupo={};
+ movs.forEach(m=>{
+  const dia=new Date(m.ts).toISOString().slice(0,10);
+  const d=dias[dia]||(dias[dia]={dia,entradas:0,saidas:0});
+  const p=PP[idx[m.c]],nome=p?p[1]+" "+p[2]:m.c;
+  const pr=produtos[m.c]||(produtos[m.c]={codigo:m.c,nome,entradas:0,saidas:0,total:0});
+  const op=operadores[m.u||"-"]||(operadores[m.u||"-"]={login:m.u||"-",nome:m.o||m.u||"-",entradas:0,saidas:0,total:0});
+  const chave=(p?p[1]+" · "+p[2]:"(fora do cadastro)");
+  const g=grupo[chave]||(grupo[chave]={nome:chave,qtd:0});
+  const q=Math.abs(m.q);
+  if(m.t==="in"){d.entradas+=q;pr.entradas+=q;op.entradas+=q}
+  else if(m.t==="out"){d.saidas+=q;pr.saidas+=q;op.saidas+=q}
+  pr.total++;op.total++;
+ });
+ PP.forEach((p,i)=>{const chave=p[1]+" · "+p[2];const g=grupo[chave]||(grupo[chave]={nome:chave,qtd:0});g.qtd+=b[i]});
+ const ultimo=movs.reduce((a,m)=>Math.max(a,m.ts||0),0);
+ return{
+  movs,
+  dias:Object.values(dias).sort((a,b2)=>a.dia<b2.dia?-1:1),
+  produtos:Object.values(produtos).sort((a,b2)=>b2.total-a.total),
+  operadores:Object.values(operadores).sort((a,b2)=>b2.total-a.total),
+  grupo:Object.values(grupo).filter(g=>g.qtd!==0).sort((a,b2)=>b2.qtd-a.qtd),
+  atualizadoEm:ultimo||Date.now(),
+  baixo:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]),
+  zerados:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v<=0),
+  pendentes:REQ.length
+ };
+}
+function pbiCSV(){
+ const d=pbiDados();
+ if(!d.movs.length){toast("Nenhuma movimentação no recorte.",true);return}
+ const linhas=[["Data e hora","Produto","Código","Cor","Operador","Login","Tipo","Quantidade","Aparelho"]];
+ d.movs.forEach(m=>{const p=PP[idx[m.c]];
+  linhas.push([fmt(m.ts),p?p[1]:"",m.c,p?p[2]:"",m.o||"",m.u||"",m.t,m.q,m.aparelho||""])});
+ csv("relatorio_mdo_"+new Date().toISOString().slice(0,10)+".csv",linhas);
+ audit("EXPORTAÇÃO","relatório",d.movs.length+" linhas");
+}
+function drawPbi(){
+ const el=$("pbi");if(!el)return;
+ if(!isA()){el.innerHTML="";return}
+ const d=pbiDados();
+ const opcoes=(lista,atual)=>'<option value="">Todos</option>'+lista.map(v=>'<option value="'+esc(v)+'"'+(v===atual?" selected":"")+'>'+esc(v)+'</option>').join("");
+ const modelos=[...new Set(PP.map(p=>p[1]))].sort();
+ const cores=[...new Set(PP.map(p=>p[2]).filter(Boolean))].sort();
+ const operadores=[...new Set(M.filter(vivo).map(m=>m.u).filter(Boolean))].sort();
+ const maxDia=Math.max(1,...d.dias.map(x=>Math.max(x.entradas,x.saidas)));
+ const totalGrupo=d.grupo.reduce((a,g)=>a+g.qtd,0)||1;
+ const maxProd=Math.max(1,...d.produtos.slice(0,10).map(p=>p.total));
+ const maxOp=Math.max(1,...d.operadores.map(o=>o.total));
+ let h='<div class="card"><h3>📈 Relatório (Power BI)</h3>'+
+  '<div class="mu">Somente consulta · dados deste aparelho · Atualizado em '+new Date(d.atualizadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>'+
+  '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">'+
+   '<select class="in" id="pbiP" style="margin:0;flex:1 1 90px"><option value="1"'+(PBI.periodo===1?" selected":"")+'>Hoje</option><option value="7"'+(PBI.periodo===7?" selected":"")+'>7 dias</option><option value="30"'+(PBI.periodo===30?" selected":"")+'>30 dias</option><option value="90"'+(PBI.periodo===90?" selected":"")+'>90 dias</option></select>'+
+   '<select class="in" id="pbiT" style="margin:0;flex:1 1 90px">'+(PBI.tipo?"":'<option value="">Todos os tipos</option>')+
+    ['in','out','adj'].map(t=>'<option value="'+t+'"'+(PBI.tipo===t?" selected":"")+'>'+TN[t]+'</option>').join("")+'</select>'+
+   '<select class="in" id="pbiO" style="margin:0;flex:1 1 90px">'+opcoes(operadores,PBI.operador)+'</select>'+
+   '<select class="in" id="pbiM" style="margin:0;flex:1 1 90px">'+opcoes(modelos,PBI.modelo)+'</select>'+
+   '<select class="in" id="pbiC" style="margin:0;flex:1 1 90px">'+opcoes(cores,PBI.cor)+'</select>'+
+   '<button type="button" class="btn ghost" id="pbiL" style="width:auto">Limpar</button>'+
+   '<button type="button" class="btn ghost" id="pbiA" style="width:auto">🔄 Atualizar</button>'+
+   '<button type="button" class="btn ghost" id="pbiX" style="width:auto">⬇ CSV</button>'+
+  '</div>'+(PBI.cruz?'<div class="mu" style="margin-top:6px">Filtro cruzado: '+esc(PBI.cruz.v)+' (toque de novo para tirar)</div>':'')+'</div>';
+ h+='<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">'+
+  ['produtos|'+PP.length,'unidades|'+bal().reduce((a,v)=>a+v,0),'entradas|'+d.dias.reduce((a,x)=>a+x.entradas,0),'saídas|'+d.dias.reduce((a,x)=>a+x.saidas,0),'baixo|'+d.baixo.length,'zerados|'+d.zerados.length,'pendentes|'+d.pendentes].map(x=>{
+   const [rot,val]=x.split("|");return'<div style="flex:1 1 90px;border:1px solid var(--bd);border-radius:10px;padding:8px"><b style="font-size:18px">'+val+'</b><div class="mu" style="font-size:11px">'+rot+'</div></div>'}).join("")+'</div></div>';
+ h+='<div class="card"><h3>Entradas e saídas por dia</h3>'+(d.dias.length?d.dias.map(x=>'<div class="item" data-a="pbiDia" data-v="'+x.dia+'"><span class="mu">'+x.dia.slice(5)+'</span><span style="display:flex;gap:4px;align-items:center;flex:1;margin-left:8px">'+
+  '<span style="background:#1f7bff;height:10px;border-radius:3px;width:'+Math.round(x.entradas/maxDia*100)+'%"></span>'+
+  '<span style="background:#dc2626;height:10px;border-radius:3px;width:'+Math.round(x.saidas/maxDia*100)+'%"></span></span>'+
+  '<span class="mu">'+x.entradas+' / '+x.saidas+'</span></div>').join(""):'<div class="mu">Sem movimentação no período.</div>')+'</div>';
+ h+='<div class="card"><h3>Top 10 mais movimentados</h3>'+(d.produtos.slice(0,10).map(p=>'<div class="item" data-a="pbiProd" data-v="'+esc(p.codigo)+'"><span><b>'+esc(p.nome)+'</b><span class="mu">'+p.total+' mov.</span></span><span style="flex:1;margin-left:8px"><span style="display:block;background:#1f7bff;height:8px;border-radius:3px;width:'+Math.round(p.total/maxProd*100)+'%"></span></span></div>').join("")||'<div class="mu">Sem dados.</div>')+'</div>';
+ h+='<div class="card"><h3>Por operador</h3>'+(d.operadores.map(o=>'<div class="item" data-a="pbiOp" data-v="'+esc(o.login)+'"><span><b>'+esc(o.nome)+'</b><span class="mu">'+o.total+' mov.</span></span><span style="flex:1;margin-left:8px"><span style="display:block;background:#0b2a7a;height:8px;border-radius:3px;width:'+Math.round(o.total/maxOp*100)+'%"></span></span></div>').join("")||'<div class="mu">Sem dados.</div>')+'</div>';
+ h+='<div class="card"><h3>Estoque por modelo e cor</h3>'+(d.grupo.slice(0,12).map(g=>'<div class="item"><span>'+esc(g.nome)+'</span><span class="mu">'+g.qtd+' ('+Math.round(g.qtd/totalGrupo*100)+'%)</span></div>').join("")||'<div class="mu">Sem estoque.</div>')+'</div>';
+ h+='<div class="card"><h3>⚠ Atenção</h3>'+(d.zerados.length||d.baixo.length?
+  d.zerados.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill z">zerado</span></div>').join("")+
+  d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")
+  :'<div class="mu">Nenhum produto em alerta.</div>')+'</div>';
+ h+='<div class="card"><h3>Detalhe ('+d.movs.length+')</h3>'+
+  (d.movs.slice().reverse().slice(0,50).map(m=>{const p=PP[idx[m.c]];return'<div class="item"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+' '+m.q+'</span></div>'}).join("")||'<div class="mu">Sem movimentação no recorte.</div>')+'</div>';
+ el.innerHTML=h;
+ const on=(id,fn)=>{const e=$(id);if(e)fn(e)};
+ on("pbiP",e=>e.onchange=()=>{PBI.periodo=Number(e.value)||30;PBI.cruz=null;drawPbi()});
+ on("pbiT",e=>e.onchange=()=>{PBI.tipo=e.value;drawPbi()});
+ on("pbiO",e=>e.onchange=()=>{PBI.operador=e.value;drawPbi()});
+ on("pbiM",e=>e.onchange=()=>{PBI.modelo=e.value;drawPbi()});
+ on("pbiC",e=>e.onchange=()=>{PBI.cor=e.value;drawPbi()});
+ on("pbiL",e=>e.onclick=()=>{PBI.periodo=30;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;drawPbi()});
+ on("pbiA",e=>e.onclick=()=>{drawPbi();toast("Atualizado")});
+ on("pbiX",e=>e.onclick=()=>pbiCSV());
+ el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
+  const tipo={pbiDia:"dia",pbiProd:"produto",pbiOp:"operador"}[b.dataset.a];
+  if(!tipo)return;
+  PBI.cruz=(PBI.cruz&&PBI.cruz.v===b.dataset.v)?null:{tipo,v:b.dataset.v};
+  drawPbi();
+ });
+}
 /* ===== ETAPA 4 — Login, autocadastro e administração com segurança no servidor ===== */
 /* Com servidor configurado, senha, papel, bloqueio e desativação são decididos pela API da Vercel.
    Sem servidor, o app segue funcionando local e diz isso — nunca finge ter validado. */
@@ -675,13 +1012,20 @@ function draw(){if(!cur)return;
   const mn=MIN[p[0]]||0,cl=b[i]<0?"n":b[i]===0?"z":"";
   h+='<button type="button" class="item" data-c="'+esc(p[0])+'"><span><b>'+esc(p[1])+'</b><span class="mu">'+esc(p[2])+' · '+esc(p[0])+(mn?' · mín. '+mn:'')+'</span></span><span class="pill '+cl+'">'+b[i]+(mn&&b[i]<=mn?' ⚠':'')+'</span></button>'});
  $("tP").textContent=PP.length;$("tN").textContent=z;$("tQ").textContent=t;$("lst").innerHTML=h||'<div class="mu">Nada encontrado.</div>';
- const L=(isA()?M:M.filter(m=>m.u===cur.l)).filter(vivo).slice(-100).reverse();
+ drawPainel();
+ const L=histFiltrado();
  $("log").innerHTML=L.map(m=>{const p=PP[idx[m.c]],sg=m.t==="out"?"−"+m.q:(m.q>0?"+":"")+m.q;return'<div class="item"><span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+'</span> <b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+esc(m.o)+' · '+fmt(m.ts)+(m.ap?' · aprov. '+esc(m.ap):'')+(m.obs?' · '+esc(m.obs):'')+'</span></span><b>'+sg+'</b></div>'}).join("")||'<div class="mu">Sem movimentações.</div>';
  if(isA())drawAdm()}
 $("lst").onclick=e=>{const it=e.target.closest(".item");if(!it||!isA())return;const c=it.dataset.c;if(idx[c]==null)return;
  const v=prompt("Estoque mínimo (alerta) para "+PP[idx[c]][1]+". 0 = sem alerta:",MIN[c]||0);if(v===null)return;
  MIN[c]=Math.max(0,parseInt(v,10)||0);sMin();audit("MÍNIMO",c,String(MIN[c]));draw()};
 $("q").oninput=draw;
+/* ETAPA 5 — filtros do histórico (7.3) */
+$("hQ").oninput=()=>{HF.q=$("hQ").value;draw()};
+$("hT").onchange=()=>{HF.t=$("hT").value;draw()};
+$("hP").onchange=()=>{HF.dias=Number($("hP").value)||0;draw()};
+$("hL").onclick=()=>{HF.q="";HF.t="";HF.dias=0;$("hQ").value="";$("hT").value="";$("hP").value="0";draw()};
+$("hX").onclick=()=>histCSV();
 function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]);
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
  let h='<div class="card"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
@@ -689,6 +1033,10 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  h+='<div class="card"><h3>👥 Usuários</h3>'+U.map((u,i)=>{const st=u.st==="bloq"?" · bloqueado":u.st==="desat"?" · desativado":u.temp?" · troca de senha pendente":"";
   return'<div class="item"><span><b>'+esc(u.n)+'</b><span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+st+'</span></span><span><button type="button" class="pill" data-a="pw" data-i="'+i+'">Senha</button> '+(u.st==="bloq"?'<button type="button" class="pill" data-a="ub" data-i="'+i+'">Desbloquear</button> ':'')+(u.st!=="desat"&&u.l!==cur.l?'<button type="button" class="pill n" data-a="du" data-i="'+i+'">Desativar</button> ':'')+(u.st==="desat"?'<button type="button" class="pill" data-a="ua" data-i="'+i+'">Reativar</button>':'')+'</span></div>'}).join("")+
  '<input class="in" id="nuN" placeholder="Nome completo" autocomplete="name"><input class="in" id="nuL" placeholder="Login" autocapitalize="none"><input class="in" id="nuP" type="password" placeholder="Senha provisória (mín. 6)"><select class="in" id="nuR"><option value="op">Operador</option><option value="admin">Administrador</option></select><button type="button" class="btn" data-a="au">+ Criar usuário</button></div>';
+ h+='<div class="card"><h3>📦 Inventário</h3><div class="mu">'+(INV.ativo?'Em andamento · responsável: '+esc(INV.resp)+' · '+Object.keys(INV.itens||{}).length+' produto(s) contado(s)':'Nenhum inventário em andamento.')+'</div>'+
+  '<button type="button" class="btn" data-a="invIni">'+(INV.ativo?'🔄 Reiniciar inventário':'📦 Iniciar inventário')+'</button>'+
+  (INV.ativo?'<button type="button" class="btn ghost" data-a="invFim">✅ Concluir e ver divergências</button>':'')+
+  ((ls("mdo_invh",[]).length)?'<button type="button" class="btn ghost" data-a="invHist">🕘 Histórico de inventários</button>':'')+'</div>';
  h+='<div class="card"><h3>📋 Contagem de inventário</h3><div class="mu">Use o modo "Contagem" na aba Bipar e bipe cada peça.</div>'+cn.map(c=>{const i=idx[c],d=CNT[c].q-b[i];return'<div class="item"><span>'+esc(PP[i][1])+' '+esc(PP[i][2])+'<span class="mu">Contado '+CNT[c].q+' · Sistema '+b[i]+'</span></span><span><button type="button" class="pill" data-a="cm" data-i="'+esc(c)+'">−</button> <span class="pill '+(d?'n':'')+'">'+(d>0?'+':'')+d+'</span></span></div>'}).join("")+
  (cn.length?'<button type="button" class="btn" data-a="ap">Aplicar ajustes ao estoque</button><button type="button" class="btn ghost" data-a="cc">Limpar contagem</button>':'')+
  (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
@@ -703,10 +1051,13 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
   '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
+ h+='<div id="pbi"></div>';
+ h+='<div id="rel"></div>';
  h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
  $("adm").innerHTML=h;
  $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
+ drawRel();drawPbi();
  syncStatus()}
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
 $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
@@ -731,6 +1082,13 @@ async function act(a,i){
    if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
    audit("CONTA SERVIDOR",i,acaoMap[a]);act("ctListar");
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
+ if(a==="invIni"){invIniciar();return}
+ if(a==="invFim"){invConcluir();return}
+ if(a==="invHist"){
+  const hs=ls("mdo_invh",[]).slice().reverse();
+  alert(hs.map(x=>fmt(x.fim)+" · "+x.resp+" · "+x.itens.length+" itens · "+x.itens.filter(i=>i.dif!==0).length+" divergências").join("\n")||"Nenhum inventário concluído.");
+  return}
+ if(a==="pVer"){painelVer(i);return}
  if(a==="sySalvar"){
   const u=String($("syU").value||"").trim().replace(/\/$/,""),t=String($("syT").value||"").trim();
   if(u&&!/^https:\/\//.test(u))return alert("O endereço precisa começar com https://");
@@ -943,4 +1301,6 @@ $("ph").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)ret
   const h=$("hid");if(h)h.innerHTML="" }};
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
+/* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
+try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
 </script></body></html>
