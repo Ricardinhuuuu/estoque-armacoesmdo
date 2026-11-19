@@ -195,3 +195,38 @@ Sem esconder nada:
 - **Próximo passo único:** um PR `secao11-final` → `main`, o deploy, e o roteiro de validação no celular.
 
 **Só então**, com o diagnóstico da câmera e o CSV das leituras na mão, o projeto pode ser declarado concluído.
+
+---
+
+# Adendo — Câmera 6.5.0 (depois da Seção 11)
+
+A Seção 11 fechou o prompt mestre original. Depois dela veio um pedido novo, sobre a câmera,
+entregue no **PR #13** (mesclado). Ele também passa pelo mesmo checklist:
+
+| Item do checklist | Resposta |
+|---|---|
+| Todos os itens pedidos foram feitos? | Sim — os 3 blocos: (1) visor e barra de zoom, (2) bipagem instantânea, (3) captura por foto. |
+| Alterações conferidas? | Sim — `index.html` e `src/index_versao6.html` idênticos, versão 6.5.0 no rodapé e no `package.json`. |
+| Testado, inclusive erro? | **155 testes** (4 novos para estas mudanças). Testado também sem `crypto.subtle` (HTTP simples), onde o app cai no hash de reserva. |
+| Erro ou comportamento estranho? | Sim: o CI do GitHub reprovou 2 testes que passavam na máquina local — o navegador do CI não expõe `crypto.subtle`. Corrigido: `H()` agora testa `crypto.subtle` antes de usar, e o teste aceita os dois ambientes. Depois disso, 3 execuções do CI passaram. |
+| Funcionalidades e interface preservadas? | Sim — nenhuma tela, aba ou dado mudou. O visor ficou mais baixo (pedido explícito) e ganhou botões de zoom; o resto da interface está igual. |
+| Algo pendente? | Sim: a **prova em aparelho real** (reflexo, velocidade sentida, taxa de acerto da foto). Roteiro de 7 passos em `docs/CAMERA_LEITURA_MELHORIAS.md`. |
+
+## Situação do repositório
+
+| Item | Estado |
+|---|---|
+| `main` | `f6f3fa3e` — versão **6.5.0**, com tudo |
+| PR #1, #12, #13 | mesclados |
+| PRs #2 a #9 | fechados sem merge (conteúdo já nos PRs acima) |
+| CI (GitHub Actions) | roda `node tests/run-tests.js` a cada push e PR — passando |
+| Testes | **155 passando, 0 falhando** |
+
+## O que continua dependendo de você
+
+1. **Deploy na Vercel** — se o projeto já está ligado ao repositório, o merge na `main` publica
+   sozinho. Confira o rodapé: deve dizer **versão 6.5.0**.
+2. **Postgres e `SYNC_TOKEN`** — sem eles o app funciona em modo local, sem sincronizar.
+3. **Teste no iPhone e no Android** com a etiqueta `80202503194`.
+4. **Pesquisa por foto com foto real da etiqueta** — é o único item que o prompt mestre não
+   aceita como concluído por teste automático.
