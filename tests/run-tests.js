@@ -380,6 +380,149 @@ t("localStorage corrompido não derruba o app", () => {
   eq(run(env, "PP.length"), 160, "catálogo padrão:");
 });
 
+/* ================= ETAPA 1 — CÂMERA, LEITURA E BIPAGEM ================= */
+g("Etapa 1 — câmera, leitura e bipagem");
+t("1.4 biblioteca empacotada é a primeira fonte (funciona sem internet)", () => {
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(fs.existsSync(path.join(__dirname, "..", "vendor", "html5-qrcode.min.js")), "faltou vendor/html5-qrcode.min.js");
+  const libs = html.slice(html.indexOf("const LIBS={"), html.indexOf("function loadLib"));
+  const qr = libs.slice(libs.indexOf("qr:"), libs.indexOf("xl:"));
+  okv(qr.includes('"vendor/html5-qrcode.min.js"'), "vendor não está na lista");
+  okv(qr.indexOf("vendor/") < qr.indexOf("http"), "vendor deve vir antes do CDN");
+  okv(qr.includes("cdnjs") && qr.includes("jsdelivr"), "faltam fontes de reserva");
+  const lib = fs.readFileSync(path.join(__dirname, "..", "vendor", "html5-qrcode.min.js"));
+  okv(lib.length > 300000, "biblioteca empacotada parece truncada");
+  okv(lib.toString("utf8", 0, 40).includes("__Html5QrcodeLibrary__"), "arquivo empacotado não é o html5-qrcode");
+});
+t("1.2 formatos restritos a Code 128, EAN-13 e QR", () => {
+  const env = novo();
+  eq(run(env, "FMT"), ["code_128", "ean_13", "qr_code"], "formatos do leitor nativo:");
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(html.includes("F.CODE_128,F.EAN_13,F.QR_CODE"), "formatos da biblioteca não estão restritos");
+});
+t("1.3 leitura contínua a ~25-30 tentativas por segundo", () => {
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(html.includes("setTimeout(r,40)"), "intervalo do laço nativo não é 40 ms (~25/s)");
+  okv(html.includes("fps:30"), "biblioteca não está em 30 fps");
+  okv(html.includes("focusMode:\"continuous\""), "falta foco automático contínuo");
+  okv(html.includes("width:{ideal:1280},height:{ideal:720}"), "resolução de referência não é 1280x720");
+  okv(html.includes("height:Math.floor(h*.42)"), "área de leitura não está larga (42% da altura)");
+});
+t("1.5 zoom padrão de 3,4x existe e é aplicado ao abrir", () => {
+  const env = novo();
+  eq(run(env, "ZOOM"), 3.4, "constante de zoom:");
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(html.includes("await aplicarZoom(stream,box)"), "startNative não aplica zoom");
+  okv(html.includes("aplicarZoom(src,box)") || html.includes("zoom:Math.min(ZOOM,max)"), "startLib não aplica zoom");
+  okv(html.includes("v.style.transform=\"scale(\"+ZOOM+\")\"") || html.includes("scale(\"+ZOOM+\")\""), "falta ampliação digital de reserva");
+});
+t("1.5 zoom usa o máximo do aparelho quando ele não chega a 3,4x", () => {
+  const env = novo();
+  const r = run(env, `(async()=>{
+    const chamadas=[];
+    const track={getCapabilities:()=>({zoom:{min:1,max:2}}),applyConstraints:async c=>chamadas.push(c)};
+    const v=document.createElement("video");v.style.cssText="";
+    const box=document.createElement("div");box.appendChild(v);
+    const z=await aplicarZoom({getVideoTracks:()=>[track]},box);
+    return {z,chamadas,transform:v.style.transform};
+  })()`);
+  return r.then(({ z, chamadas, transform }) => {
+    okv(chamadas.length === 1, "deveria aplicar uma restrição de zoom");
+    eq(chamadas[0].advanced[0].zoom, 2, "zoom aplicado deve ser o máximo do aparelho:");
+    okv(z.digital === true, "restante até 3,4x deve ser ampliação digital");
+  });
+});
+t("1.5 sem zoom de câmera cai para ampliação digital e avisa", () => {
+  const env = novo();
+  return run(env, `(async()=>{
+    const track={getCapabilities:()=>({}),applyConstraints:async()=>{}};
+    const v=document.createElement("video");
+    const box=document.createElement("div");box.appendChild(v);
+    const z=await aplicarZoom({getVideoTracks:()=>[track]},box);
+    return {z,transform:v.style.transform,aviso:document.getElementById("camMsg").dataset.zoom||""};
+  })()`).then(({ z, transform, aviso }) => {
+    okv(z.nativo === false, "não deveria usar zoom nativo");
+    okv(transform.includes("scale(3.4)"), "deveria ampliar 3,4x digitalmente, obtido: " + transform);
+    okv(aviso.length > 0, "deveria explicar a limitação do aparelho");
+  });
+});
+t("1.6 reabrir a câmera não relê a etiqueta que está na frente", () => {
+  const env = novo();
+  comoAdmin(env);
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(html.includes('const box=$("cam"),msg=$("camMsg");last="";lastT=0;'), "camBtn não limpa a última leitura");
+});
+/* entra como administrador e espera o login assíncrono terminar */
+function adminPronto(env) {
+  comoAdmin(env);
+  return flush().then(() => {
+    okv(run(env, "!!cur"), "login de teste não concluiu");
+    return env;
+  });
+}
+t("1.6 leitura repetida em menos de 1,5 s é bloqueada", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const c=PP[0][0];const antes=bal()[0];
+      const r1=dedupe(c);
+      const r2=dedupe(c);
+      return {r1,r2,saldoAntes:antes,saldoDepois:bal()[0]};
+    })()`);
+    okv(r.r1 === true, "primeira leitura deveria passar");
+    okv(r.r2 === false, "segunda leitura imediata deveria ser bloqueada");
+    eq(r.saldoDepois, r.saldoAntes - 1, "saldo após uma única baixa:");
+  }));
+t("1.6 retorno imediato mostra produto, modelo, cor e saldo", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const p=PP[0];
+      dedupe(p[0]);
+      const c=document.getElementById("res");
+      return {txt:c.textContent,html:c.innerHTML};
+    })()`);
+    const html = fs.readFileSync(HTML, "utf8");
+    okv(r.txt.includes("Baixa registrada"), "não confirmou a baixa: " + r.txt);
+    okv(r.html.includes("Saldo atual"), "não mostrou o saldo atualizado");
+    okv(r.txt.includes("Cor:"), "não mostrou a cor");
+    okv(html.includes("function hit(") && html.includes("beep(true)"), "falta confirmação visual/sonora");
+  }));
+t("1.6 código não cadastrado avisa sem associar a outro produto", () =>
+  adminPronto(novo()).then((env) => {
+    env.respostas.confirm = false; // o administrador recusa cadastrar na hora
+    const r = run(env, `(()=>{
+      const antes=JSON.stringify(M.map(m=>m.c));
+      unk("9999999999999");
+      return {txt:document.getElementById("res").textContent, antes, depois:JSON.stringify(M.map(m=>m.c))};
+    })()`);
+    okv(r.txt.includes("não está no cadastro") || r.txt.includes("não encontrado"), "aviso pouco claro: " + r.txt);
+    eq(r.depois, r.antes, "não pode registrar movimentação para código desconhecido:");
+  }));
+t("1.4 mensagens de erro cobrem cada causa", () => {
+  const env = novo();
+  const casos = [
+    ["NotAllowedError", "Câmera bloqueada"],
+    ["NotFoundError", "Nenhuma câmera"],
+    ["NotReadableError", "em uso por outro app"],
+    ["SecurityError", "https"],
+  ];
+  casos.forEach(([nome, trecho]) => {
+    const msg = run(env, `camErr({name:"${nome}"})`);
+    okv(msg.includes(trecho), nome + " deveria explicar: " + trecho + " (obtido: " + msg + ")");
+  });
+});
+t("1.7 etiqueta real do repositório decodifica e acha o produto", () => {
+  const env = novo();
+  comoAdmin(env);
+  // código real da etiqueta Codigo_de_barra.png: 80202503194 (Code 128)
+  const r = run(env, `(()=>{
+    const c=normCode("80202503194");
+    return {c, existe:idx[c]!=null, nome:idx[c]!=null?PP[idx[c]][1]:null};
+  })()`);
+  eq(r.c, "80202503194", "código normalizado:");
+  okv(r.existe, "o código da etiqueta real precisa existir no catálogo");
+  okv(!!r.nome, "produto sem descrição");
+});
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));

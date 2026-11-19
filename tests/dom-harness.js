@@ -7,10 +7,17 @@ const path = require("path");
 
 function makeEnv(opts = {}) {
   const els = new Map();
+  /* querySelector mínimo: devolve o primeiro filho com a tag pedida */
+  const sel = (raiz, s) => {
+    const tag = String(s).trim().replace(/[^a-zA-Z]/g, "").toLowerCase();
+    return (raiz.children || []).find((c) => c.tagName && c.tagName.toLowerCase() === tag) || null;
+  };
   function mk(id, tag = "div") {
     const el = {
-      id, tagName: tag.toUpperCase(), className: "", textContent: "", innerHTML: "",
-      value: "", type: "text", disabled: false, style: {}, dataset: {}, children: [],
+      id, tagName: tag.toUpperCase(), className: "", innerHTML: "",
+      value: "", type: "text", disabled: false, dataset: {}, children: [],
+      /* style como objeto simples, igual ao navegador: lê e grava propriedades */
+      style: { cssText: "", setProperty(k, v) { this[k] = v; }, getPropertyValue(k) { return this[k] || ""; } },
       _cls: new Set(),
       classList: {
         add: (c) => el._cls.add(c), remove: (c) => el._cls.delete(c),
@@ -20,13 +27,18 @@ function makeEnv(opts = {}) {
       appendChild(c) { el.children.push(c); return c; },
       removeChild(c) { el.children = el.children.filter((x) => x !== c); },
       remove() {}, focus() {}, click() { if (el.onclick) el.onclick({ target: el }); },
-      querySelector: () => null, closest: () => null, setAttribute() {}, addEventListener() {},
+      querySelector: (s) => sel(el, s), closest: () => null, setAttribute() {}, addEventListener() {},
       getContext: () => null, play: async () => {}, getCapabilities: () => ({}), applyConstraints: async () => {},
       getTracks: () => [{ stop() {} }], getVideoTracks: () => [{ getCapabilities: () => ({}), applyConstraints: async () => {} }],
     };
     Object.defineProperty(el, "innerHTML", {
       get: () => el._html || "",
-      set: (v) => { el._html = v; },
+      /* como no navegador, textContent acompanha o HTML gravado */
+      set: (v) => { el._html = v; el._texto = String(v).replace(/<[^>]*>/g, ""); },
+    });
+    Object.defineProperty(el, "textContent", {
+      get: () => (el._html ? String(el._html).replace(/<[^>]*>/g, "") : el._txt || ""),
+      set: (v) => { el._txt = String(v); el._html = v; },
     });
     return el;
   }
