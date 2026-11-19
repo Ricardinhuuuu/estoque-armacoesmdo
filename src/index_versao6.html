@@ -66,6 +66,16 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 @keyframes lzm{from{top:0}to{top:100%}}
 @media (prefers-reduced-motion:reduce){#lz .ln{animation-duration:2.4s}}
 .item[data-c]{cursor:pointer}.pill{border:0;cursor:pointer;color:var(--tx)}.pill.n{color:var(--r)}
+@media print{
+ body{background:#fff!important}
+ nav,.seg,.qty,#camW,#camBtn,#phBtn,#undo,#qB,#q,#hX,#hL,.btn,button{display:none!important}
+ .sec{display:block!important;page-break-inside:avoid}
+ .card{box-shadow:none!important;border:1px solid #ccc!important;page-break-inside:avoid}
+ .item{border-bottom:1px solid #eee!important;page-break-inside:avoid}
+ #pbi .item span[style*="height"]{background:#1f7bff!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+ .printOnly{display:block!important}
+}
+.printOnly{display:none}
 </style></head><body>
 <div id="lg"><div class="card"><h2 style="margin:0 0 4px">📦 Estoque MDO</h2><div class="mu" id="lgT"></div>
 <input class="in" id="lgN" placeholder="Seu nome completo" autocomplete="name"><input class="in" id="lgL" placeholder="Login" autocapitalize="none" autocomplete="username"><input class="in" id="lgP" type="password" placeholder="Senha" autocomplete="current-password">
@@ -91,6 +101,7 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="card"><input id="q" class="in" style="margin:0 0 8px" placeholder="🔎 Buscar por código, modelo ou cor">
 <div id="qB"><button class="btn ghost" id="qCam" style="margin-top:0">📷 Buscar por código de barras</button><button class="btn ghost" id="qPho">📸 Buscar por foto</button></div>
 <div id="qC"></div><div id="qRes"></div><div class="mu" id="qMsg" style="margin-top:8px"></div></div>
+<div id="buscS" class="card"></div>
 <div id="lst"></div></section>
 <section id="s2" class="sec"><div class="card"><div class="mu" style="margin-bottom:6px">Filtros do histórico</div>
 <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -310,6 +321,17 @@ function syncStatus(){
 }
 /* cabeçalhos com o segredo compartilhado */
 function syncHeaders(){return{"Content-Type":"application/json","X-MDO-Token":SYNC.token}}
+/* ETAPA 6 — busca de produtos no servidor, com filtro e paginação (não carrega tudo de uma vez) */
+async function buscarProdutosServidor(termo,pag){
+ if(!syncAtivo())return null;
+ try{
+  const u=SYNC.url.replace(/\/$/,"")+"/api/produtos?q="+encodeURIComponent(termo||"")+"&pagina="+((pag||0)+1)+"&tamanho=20";
+  const r=await fetch(u,{headers:syncHeaders()});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
+  return j;
+ }catch(e){SYNC.ultimoErro=(e&&e.message)||"falha de rede";sS();return null}
+}
 /* põe a movimentação na fila (id único é o que impede duplicidade no reenvio) */
 function enfileirar(m){
  if(!m||!m.id)return;
@@ -377,6 +399,32 @@ async function sincronizar(opts){
 window.addEventListener("online",()=>{if(syncAtivo())sincronizar({silencioso:true})});
 setInterval(()=>{if(syncAtivo()&&FILA.length)sincronizar({silencioso:true})},30000);
 
+/* ===== ETAPA 6 — Leitura do cadastro por página, sem carregar tudo de uma vez ===== */
+/* O app continua local; quando o servidor está ligado, oferece a leitura paginada do catálogo. */
+const BUSCA={termo:"",pagina:0,paginas:1,total:0,itens:null,carregando:false};
+async function buscaServidor(termo,pagina){
+ BUSCA.carregando=true;drawBusca();
+ const j=await buscarProdutosServidor(termo,pagina);
+ BUSCA.carregando=false;
+ if(!j){drawBusca();return null}
+ BUSCA.termo=termo||"";BUSCA.pagina=j.pagina;BUSCA.paginas=j.paginas;BUSCA.total=j.total;
+ BUSCA.itens=j.produtos||[];
+ drawBusca();
+ return j;
+}
+function drawBusca(){
+ const el=$("buscS");if(!el)return;
+ if(!syncAtivo()){el.textContent="";return}
+ let h='<div class="mu" style="margin-top:8px">No servidor: '+(BUSCA.itens?BUSCA.total+" produto(s)"+(BUSCA.total?" · página "+BUSCA.pagina+" de "+BUSCA.paginas:""):"não consultado")+'</div>';
+ h+='<div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn ghost" id="buscG" style="width:auto">🔎 Buscar no servidor</button>'+
+  (BUSCA.itens&&BUSCA.pagina>1?'<button type="button" class="btn ghost" id="buscA" style="width:auto">← Anterior</button>':'')+
+  (BUSCA.itens&&BUSCA.pagina<BUSCA.paginas?'<button type="button" class="btn ghost" id="buscP" style="width:auto">Próxima →</button>':'')+'</div>';
+ h+=BUSCA.carregando?'<div class="mu">Carregando…</div>':(BUSCA.itens?BUSCA.itens.map(p=>'<div class="item"><span><b>'+esc(p.descricao)+'</b><span class="mu">'+esc(p.cor)+' · '+esc(p.codigo)+'</span></span></div>').join(""):"");
+ el.innerHTML=h;
+ const g=$("buscG");if(g)g.onclick=()=>buscaServidor(String($("q").value||""),0);
+ const a=$("buscA");if(a)a.onclick=()=>buscaServidor(BUSCA.termo,BUSCA.pagina-2);
+ const p=$("buscP");if(p)p.onclick=()=>buscaServidor(BUSCA.termo,BUSCA.pagina);
+}
 /* ===== ETAPA 5 — Painel, histórico, relatórios, inventário, alertas e Power BI ===== */
 /* Filtro do histórico (7.3). Vale para a aba Log e para a exportação. */
 const HF={q:"",t:"",dias:0};
@@ -629,6 +677,34 @@ function pbiDados(){
   pendentes:REQ.length
  };
 }
+/* 7.6 — PDF: imprime só o relatório do recorte atual (sem instalar biblioteca) */
+function pbiPDF(){
+ if(!isA())return toast("Só o administrador exporta o relatório.",true);
+ const d=pbiDados();
+ if(!d.movs.length){toast("Nenhuma movimentação no recorte: nada para exportar.",true);return}
+ const cab='<div class="printOnly" style="margin-bottom:8px"><b>MDO Estoque — Relatório</b><div class="mu">Atualizado em '+
+  new Date(d.atualizadoEm).toLocaleString("pt-BR")+' · recorte: '+PBI.periodo+' dia(s)'+
+  (PBI.tipo?' · tipo: '+TN[PBI.tipo]:'')+(PBI.operador?' · operador: '+esc(PBI.operador):'')+
+  (PBI.modelo?' · modelo: '+esc(PBI.modelo):'')+(PBI.cor?' · cor: '+esc(PBI.cor):'')+'</div></div>';
+ /* marca tudo o que não é o relatório para ficar fora da impressão */
+ const corpo=document.body;
+ const marcas=[];
+ Array.prototype.forEach.call(corpo.children||[],c=>{
+  if(c.id==="pbi")return;
+  marcas.push([c,c.style.display]);
+  c.style.display="none";
+ });
+ const alvo=$("pbi");
+ const antes=alvo.innerHTML;
+ alvo.innerHTML=cab+antes;
+ audit("EXPORTAÇÃO","relatório PDF",d.movs.length+" linhas");
+ try{window.print()}
+ catch(e){toast("Não foi possível abrir a impressão neste navegador.",true)}
+ setTimeout(()=>{
+  alvo.innerHTML=antes;
+  marcas.forEach(([c,v])=>{c.style.display=v||""});
+ },600);
+}
 function pbiCSV(){
  const d=pbiDados();
  if(!d.movs.length){toast("Nenhuma movimentação no recorte.",true);return}
@@ -662,6 +738,7 @@ function drawPbi(){
    '<button type="button" class="btn ghost" id="pbiL" style="width:auto">Limpar</button>'+
    '<button type="button" class="btn ghost" id="pbiA" style="width:auto">🔄 Atualizar</button>'+
    '<button type="button" class="btn ghost" id="pbiX" style="width:auto">⬇ CSV</button>'+
+   '<button type="button" class="btn ghost" id="pbiF" style="width:auto">🖨 PDF</button>'+
   '</div>'+(PBI.cruz?'<div class="mu" style="margin-top:6px">Filtro cruzado: '+esc(PBI.cruz.v)+' (toque de novo para tirar)</div>':'')+'</div>';
  h+='<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">'+
   ['produtos|'+PP.length,'unidades|'+bal().reduce((a,v)=>a+v,0),'entradas|'+d.dias.reduce((a,x)=>a+x.entradas,0),'saídas|'+d.dias.reduce((a,x)=>a+x.saidas,0),'baixo|'+d.baixo.length,'zerados|'+d.zerados.length,'pendentes|'+d.pendentes].map(x=>{
@@ -689,6 +766,7 @@ function drawPbi(){
  on("pbiL",e=>e.onclick=()=>{PBI.periodo=30;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;drawPbi()});
  on("pbiA",e=>e.onclick=()=>{drawPbi();toast("Atualizado")});
  on("pbiX",e=>e.onclick=()=>pbiCSV());
+ on("pbiF",e=>e.onclick=()=>pbiPDF());
  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
   const tipo={pbiDia:"dia",pbiProd:"produto",pbiOp:"operador"}[b.dataset.a];
   if(!tipo)return;
@@ -1012,7 +1090,7 @@ function draw(){if(!cur)return;
   const mn=MIN[p[0]]||0,cl=b[i]<0?"n":b[i]===0?"z":"";
   h+='<button type="button" class="item" data-c="'+esc(p[0])+'"><span><b>'+esc(p[1])+'</b><span class="mu">'+esc(p[2])+' · '+esc(p[0])+(mn?' · mín. '+mn:'')+'</span></span><span class="pill '+cl+'">'+b[i]+(mn&&b[i]<=mn?' ⚠':'')+'</span></button>'});
  $("tP").textContent=PP.length;$("tN").textContent=z;$("tQ").textContent=t;$("lst").innerHTML=h||'<div class="mu">Nada encontrado.</div>';
- drawPainel();
+ drawPainel();drawBusca();
  const L=histFiltrado();
  $("log").innerHTML=L.map(m=>{const p=PP[idx[m.c]],sg=m.t==="out"?"−"+m.q:(m.q>0?"+":"")+m.q;return'<div class="item"><span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+'</span> <b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+esc(m.o)+' · '+fmt(m.ts)+(m.ap?' · aprov. '+esc(m.ap):'')+(m.obs?' · '+esc(m.obs):'')+'</span></span><b>'+sg+'</b></div>'}).join("")||'<div class="mu">Sem movimentações.</div>';
  if(isA())drawAdm()}
