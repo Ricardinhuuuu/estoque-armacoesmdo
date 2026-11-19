@@ -1652,6 +1652,56 @@ t("7.5 a escolha dos alertas fica salva no aparelho", () =>
     eq(r, { parado: false, zerado: true }, "ao reabrir, a escolha precisa valer:");
   }));
 
+/* ================= ETAPA 6 — DESEMPENHO E ESTADOS DE CARREGAMENTO ================= */
+g("Etapa 6 — desempenho e mensagens de falha");
+t("as bibliotecas não travam a abertura do app", () => {
+  const src = fs.readFileSync(HTML, "utf8");
+  okv(!/^loadLib\("qr"\)/m.test(src), "a biblioteca da câmera não pode carregar no caminho da abertura");
+  okv(src.includes("setTimeout(()=>preCarregarLibs(),1200)"), "as bibliotecas precisam carregar depois da abertura");
+  okv(src.includes("if(L.p)return L.p"), "abrir a câmera precisa reaproveitar o carregamento em andamento");
+});
+t("a pesquisa no servidor é paginada, nunca carrega tudo", () => {
+  const src = fs.readFileSync(HTML, "utf8");
+  okv(src.includes('"&pagina="+') && src.includes("&tamanho=20"), "a busca precisa pedir uma página por vez");
+  const api = fs.readFileSync("api/produtos.js", "utf8");
+  okv(api.includes("limit $") && api.includes("offset $"), "o banco precisa paginar com limit/offset");
+  okv(api.includes("count(*)::int"), "o total precisa vir do banco, sem trazer as linhas");
+});
+t("estados de carregamento e falha da busca aparecem na tela", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      SYNC.url="https://exemplo.invalido";SYNC.token="t";
+      BUSCA.erro="sem conexão";BUSCA.carregando=false;BUSCA.itens=null;drawBusca();
+      const falha=$("buscS").innerHTML;
+      BUSCA.erro="";BUSCA.carregando=true;drawBusca();
+      const carregando=$("buscS").innerHTML;
+      BUSCA.carregando=false;BUSCA.itens=[];BUSCA.termo="xyz";drawBusca();
+      const vazio=$("buscS").innerHTML;
+      BUSCA.itens=null;drawBusca();
+      return {falha, carregando, vazio};
+    })()`);
+    okv(r.falha.includes("Não foi possível buscar no servidor"), "falha precisa explicar: " + r.falha.slice(0, 120));
+    okv(r.falha.includes("continua funcionando"), "falha precisa dizer que a busca local segue valendo");
+    okv(r.carregando.includes("Carregando"), "precisa mostrar o carregamento");
+    okv(r.vazio.includes("Nenhum produto encontrado"), "vazio precisa ser dito com clareza: " + r.vazio.slice(0, 140));
+  }));
+
+t("o diagnóstico da câmera mostra o tempo de abertura", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      try{localStorage.removeItem("mdo_camdiag")}catch(e){}
+      const t=docTexto();
+      return {vazio:t};
+      function docTexto(){
+        const d={aparelho:"iPhone · Safari",leitor:"nativo",zoomMax:3,digital:2,lidas:4,falhas:1,ultima:Date.now(),msAbertura:842};
+        try{localStorage.setItem("mdo_camdiag",JSON.stringify(d))}catch(e){}
+        return camDiagTexto();
+      }
+    })()`);
+    okv(r.vazio.includes("842 ms"), "o tempo de abertura precisa aparecer: " + r.vazio);
+    okv(r.vazio.includes("iPhone"), "o aparelho precisa aparecer: " + r.vazio);
+  }));
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
