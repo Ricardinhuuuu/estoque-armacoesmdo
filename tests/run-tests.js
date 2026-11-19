@@ -1503,6 +1503,72 @@ t("9 leituras podem ser exportadas e limpas", () =>
     okv(r.resumo.includes("Nenhuma leitura"), "o resumo precisa dizer que está vazio");
   }));
 
+/* ================= SEÇÃO 6.1 — AUTOCADASTRO NA TELA DE INÍCIO ================= */
+g("Seção 6.1 — autocadastro de operador (sem e-mail)");
+t("6.1 o botão de criar acesso aparece na tela de início", () => {
+  const src = fs.readFileSync(HTML, "utf8");
+  okv(/id="lgCad"[^>]*>👤 Sou novo aqui/.test(src), "o botão de autocadastro precisa existir na tela de início");
+  okv(src.includes('id="lgCadMsg"'), "a área de aviso do cadastro precisa existir");
+  okv(src.includes('$("lgCad").onclick=()=>modoCadastro(!modoCad)'), "o botão precisa abrir o modo de cadastro");
+});
+t("6.1 nome incompleto é barrado com a mensagem exata", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `["Ricardo","  Ana ","R K",""].map(nome=>cadValidar(nome,"novo1","senha123"))`);
+    r.forEach((msg, i) => {
+      eq(msg, "Digite nome e sobrenome", "nome incompleto precisa ser barrado (caso " + i + "):");
+    });
+  }));
+t("6.1 nome e sobrenome válidos passam", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `[["Maria Souza","maria","senha123"],["Ricardo Kato","rkato","123456"],["  Ana  Lima ","analima","abcdef"]]
+      .map(x=>cadValidar(x[0],x[1],x[2]))`);
+    eq(r, ["", "", ""], "nome e sobrenome válidos não podem ser barrados:");
+  }));
+t("6.1 senha curta e login com espaço são barrados", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `({a:cadValidar("Novo Operador","novo1","123"), b:cadValidar("Novo Operador","no vo","senha123"), total:U.length})`);
+    okv(r.a.includes("6 caracteres"), "senha curta precisa ser barrada: " + r.a);
+    okv(r.b.includes("sem espaços"), "login com espaço precisa ser barrado: " + r.b);
+    eq(r.total, 1, "nenhum usuário pode ser criado nesses casos:");
+  }));
+pendentes.push(ta("6.1 autocadastro cria operador, entra na hora e avisa o administrador", async () => {
+    const env = await adminPronto(novo()); await flush();
+    const r = await run(env, `(async()=>{
+      modoCadastro(true);
+      sv(K.s,null);
+      $("lgN").value="Maria Souza";$("lgL").value="maria";$("lgP").value="senha123";
+      await cadOperador();
+      const u=U.find(x=>x.l==="maria");
+      return {erro:$("lgE").textContent, papel:u&&u.r, us:U.map(x=>x.l), msg:$("lgE").textContent, st:u&&u.st, logado:cur&&cur.l, nome:u&&u.n, total:U.length,
+              avisos:ls(avKey,[]).filter(x=>String(x.m).includes("Novo operador cadastrado")),
+              auditado:ls(K.aud,[]).some(x=>String(x.acao||x.a||"").includes("AUTOCADASTRO"))};
+    })()`);
+    eq(r.papel, "operador", "o autocadastro nunca pode criar administrador: " + JSON.stringify(r));
+    eq(r.st, "ativo", "a conta já nasce ativa:");
+    eq(r.logado, "maria", "o operador entra imediatamente, sem e-mail:");
+    eq(r.nome, "Maria Souza", "nome guardado:");
+    eq(r.avisos.length, 1, "o administrador recebe exatamente um aviso:");
+    okv(String(r.avisos[0].m).includes("Maria Souza (maria)"), "texto do aviso: " + (r.avisos[0] && r.avisos[0].m));
+    eq(r.auditado, true, "o autocadastro precisa ir para a auditoria");
+}));
+t("6.1 login já em uso é recusado", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      U.push({l:"maria",n:"Maria Souza",r:"operador",h:"x",st:"ativo",ts:Date.now()});
+      return {erro:cadValidar("Outro Nome","maria","senha123"), total:U.filter(x=>x.l==="maria").length};
+    })()`);
+    okv(String(r.erro).includes("já está em uso"), "login repetido precisa avisar: " + r.erro);
+    eq(r.total, 1, "não pode duplicar o login:");
+  }));
+t("6.1 sem e-mail em nenhum campo do autocadastro", () => {
+  const src = fs.readFileSync(HTML, "utf8");
+  const i = src.indexOf("async function cadOperador");
+  okv(i > 0, "a função de autocadastro precisa existir");
+  const bloco = src.slice(i, i + 1400);
+  okv(!/@[a-z]+\.(com|local|br)/i.test(bloco), "o autocadastro não pode usar e-mail, nem interno");
+  okv(!/mailto|sendgrid|nodemailer/i.test(bloco), "o autocadastro não pode disparar e-mail");
+});
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
