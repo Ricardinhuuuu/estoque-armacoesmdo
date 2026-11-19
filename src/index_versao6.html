@@ -36,8 +36,13 @@ main{padding:14px;max-width:640px;margin:0 auto}
 .seg button.on.out{background:var(--r);color:#fff}.seg button.on.in{background:var(--b);color:#fff}
 .btn{border:0;border-radius:12px;padding:13px 16px;font-weight:700;font-size:15px;background:var(--b);color:#fff;width:100%;cursor:pointer}
 .btn.red{background:var(--r)}.btn.ghost{background:var(--bl);color:var(--tx)}
-#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000}
-#cam video{object-fit:cover}
+#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;height:min(38vh,260px)}
+#cam video,#cam canvas{width:100%;height:100%;object-fit:contain;display:block}
+/* barra de zoom embaixo do visor */
+#zoomBar{display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:var(--card);border:1px solid var(--bd);border-radius:12px}
+#zoomBar.on{display:flex}
+#zoomBar input[type=range]{flex:1;min-width:80px;accent-color:var(--b2)}
+#zoomBar b{min-width:46px;text-align:right;font-size:15px}
 .row{display:flex;gap:8px;margin-top:10px}.row input{flex:1;min-width:0;border:2px solid var(--bd);background:var(--card);color:var(--tx);border-radius:12px;padding:12px;font-size:16px}
 .qty{display:flex;align-items:center;gap:6px}.qty button{width:42px;height:46px;border:0;border-radius:12px;background:var(--bl);color:var(--tx);font-size:22px;font-weight:700}.qty b{min-width:30px;text-align:center;font-size:18px}
 .res{border-left:6px solid var(--b)}.res.err{border-color:var(--r);background:var(--rl)}.res.okout{border-color:var(--r)}
@@ -88,7 +93,9 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="card"><div class="seg"><button id="mO" class="out on">⬇ Baixa</button><button id="mI" class="in">⬆ Entrada</button><button id="mC" class="cnt">📋 Contagem</button></div>
 <div class="row" style="align-items:center;justify-content:space-between"><span class="mu">Quantidade por bipada</span><div class="qty"><button id="qm">−</button><b id="qv">1</b><button id="qp">+</button></div></div>
 <button class="btn" id="camBtn" style="margin-top:12px">📷 Ligar câmera (Leitura Automática)</button>
-<div id="camW"><div id="cam"></div><div id="gl"></div></div><div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
+<div id="camW"><div id="cam"></div><div id="gl"></div></div>
+<div id="zoomBar"><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b></div>
+<div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
 <button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button>
 <button class="btn ghost" id="cadPho" style="margin-top:8px">🏷 Cadastrar produto por foto da etiqueta</button><input type="file" id="cadPh" accept="image/*" capture="environment" hidden><input type="file" id="ph" accept="image/*" capture="environment" hidden>
 <div class="row"><input id="man" placeholder="Ou digite/bipe o código aqui" enterkeyhint="done"><button class="btn" id="go" style="width:auto">OK</button></div></div>
@@ -1423,7 +1430,7 @@ $("undo").onclick=()=>{
  if(!confirm("Desfazer a sua última bipada: "+TN[minha.t]+" de "+minha.q+" un. — "+nomeP(minha.c)+"?"))return;
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
-async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
+async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 const FMT=["code_128","ean_13","qr_code"];
 function camErr(e){const n=(e&&e.name)||String(e);
  if(n==="NotAllowedError"||n==="PermissionDeniedError")return"Câmera bloqueada. No iPhone: Ajustes › Safari › Câmera › Permitir (e abra o app direto no Safari, não dentro do WhatsApp/Instagram). Ou use a foto/digite abaixo.";
@@ -1478,27 +1485,58 @@ const dedupe=t=>{const agora=Date.now();const c=String(t);
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
-const ZOOM=3.4;
+const ZOOM=3.4;                 /* zoom com que a câmera abre */
+let ZOOMATUAL=ls("mdo_zoom",null)||ZOOM;   /* último zoom escolhido na barra, fica salvo */
 function zoomAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.zoom=msg}
+/* aplica o zoom escolhido na barra à câmera que está rodando agora (sem reabrir) */
+async function zoomAplicar(z){
+ ZOOMATUAL=Math.max(1,Math.min(6,Number(z)||1));
+ try{localStorage.setItem("mdo_zoom",String(ZOOMATUAL))}catch(e){}
+ const zv=$("zoomV");if(zv)zv.textContent=ZOOMATUAL.toFixed(1).replace(".",",")+"x";
+ const zr=$("zoomR");if(zr&&Math.abs(Number(zr.value)-ZOOMATUAL)>0.05)zr.value=ZOOMATUAL;
+ /* com a biblioteca rodando, quem sabe mover o zoom é ela */
+ if(sc&&sc.mdoZoomMover){try{return await sc.mdoZoomMover(ZOOMATUAL)}catch(e){}}
+ const box=$("cam"),v=box&&box.querySelector("video");
+ const stream=v&&v.srcObject;
+ /* 1) tenta o zoom da própria câmera (Android) */
+ let nativo=1;
+ try{
+  const t=stream&&stream.getVideoTracks&&stream.getVideoTracks()[0];
+  const c=t&&t.getCapabilities&&t.getCapabilities();
+  if(c&&c.zoom){nativo=Math.min(ZOOMATUAL,Number(c.zoom.max)||0);if(nativo>1)await t.applyConstraints({advanced:[{zoom:nativo}]})}
+ }catch(e){}
+ /* 2) o que a lente não alcança é ampliado na imagem */
+ const falta=Math.max(1,ZOOMATUAL/(nativo>1?nativo:1));
+ if(v){v.style.transformOrigin="50% 50%";v.style.transform=falta>1.01?("scale("+falta+")"):""}
+ const q=$("zoomV");if(q)q.textContent=ZOOMATUAL.toFixed(1).replace(".",",")+"x";
+ const r=$("zoomR");if(r&&Math.abs(Number(r.value)-ZOOMATUAL)>0.05)r.value=ZOOMATUAL;
+ return{nativo,falta}
+}
+/* a barra de zoom: mostra ao ligar a câmera, some ao desligar */
+function zoomBarra(ligar){
+ const b=$("zoomBar");if(!b)return;
+ b.classList.toggle("on",!!ligar);
+ if(ligar){const r=$("zoomR");if(r)r.value=ZOOMATUAL;const v=$("zoomV");if(v)v.textContent=ZOOMATUAL.toFixed(1).replace(".",",")+"x"}
+}
 async function aplicarZoom(stream,box){
  let max=0;
  try{const t=stream.getVideoTracks()[0],c=t.getCapabilities&&t.getCapabilities();
   if(c&&c.zoom){max=Number(c.zoom.max)||0;
-   const alvo=Math.min(ZOOM,max);
+   const alvo=Math.min(ZOOMATUAL,max);
    if(alvo>1)await t.applyConstraints({advanced:[{zoom:alvo}]});}}catch(e){}
  const v=box&&box.querySelector("video");
  const zNativo=max>1;
- const digital=!zNativo||max<ZOOM;   // o digital completa o que a lente não alcança
+ const digital=!zNativo||max<ZOOMATUAL;   // o digital completa o que a lente não alcança
  /* quanto o zoom de câmera cobriu; o digital (transform) completa o resto */
- const nativoAplicado=zNativo?Math.min(ZOOM,max):1;
- const digitalFalta=Math.max(1,ZOOM/nativoAplicado);
+ const nativoAplicado=zNativo?Math.min(ZOOMATUAL,max):1;
+ const digitalFalta=Math.max(1,ZOOMATUAL/nativoAplicado);
  if(v){
   v.style.transformOrigin="50% 50%";
   /* ETAPA 6.1: com zoom de câmera menor que 3,4x, o digital completa (antes a imagem ficava sem) */
-  v.style.transform=(zNativo&&max>=ZOOM)?"":("scale("+digitalFalta+")");
+  v.style.transform=(zNativo&&max>=ZOOMATUAL)?"":("scale("+digitalFalta+")");
  }
- if(!zNativo)zoomAviso("Zoom 3,4x por ampliação digital (este aparelho não expõe zoom de câmera).");
- else if(max<ZOOM)zoomAviso("Zoom de câmera até "+max.toFixed(1)+"x; o restante até 3,4x é ampliação digital.");
+ if(!zNativo)zoomAviso("Zoom por ampliação digital (este aparelho não expõe zoom de câmera).");
+ else if(max<ZOOMATUAL)zoomAviso("Zoom de câmera até "+max.toFixed(1)+"x; o restante até "+ZOOMATUAL.toFixed(1)+"x é ampliação digital.");
  else zoomAviso("");
  return{nativo:zNativo,max,digital,digitalFalta,nativoAplicado}
 }
@@ -1516,7 +1554,15 @@ async function startNative(box,f){
  const z=await aplicarZoom(stream,box);
  let on=true;
  (async()=>{while(on){try{if(v.readyState>=2){const r=await det.detect(v);if(r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
- return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""},zoom:z,mdoLeitor:"nativo",mdoZoom:z}}
+ const mover=async(alvo)=>{
+  const t=stream.getVideoTracks()[0],c=t&&t.getCapabilities&&t.getCapabilities();
+  let nat=1;
+  try{if(c&&c.zoom){nat=Math.min(alvo,Number(c.zoom.max)||0);if(nat>1)await t.applyConstraints({advanced:[{zoom:nat}]})}}catch(e){nat=1}
+  const falta=Math.max(1,alvo/(nat>1?nat:1));
+  v.style.transformOrigin="50% 50%";v.style.transform=falta>1.01?("scale("+falta+")"):"";
+  return{nativo:nat,falta};
+ };
+ return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""},zoom:z,mdoLeitor:"nativo",mdoZoom:z,mdoZoomMover:mover}}
 /* Motor 2 (iPhone/Safari e demais): biblioteca html5-qrcode */
 async function startLib(box){
  const F=Html5QrcodeSupportedFormats,o={verbose:false,formatsToSupport:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
@@ -1542,6 +1588,16 @@ async function startLib(box){
  }catch(e){}
  q.mdoZoom=z;
  q.mdoLeitor="biblioteca";
+ /* guarda como mover o zoom enquanto a câmera roda (a barra usa isto) */
+ q.mdoZoomMover=async(alvo)=>{
+  const max=(cap&&cap.zoomFeature&&cap.zoomFeature.isSupported&&cap.zoomFeature.isSupported())?Number(cap.zoomFeature.max&&cap.zoomFeature.max())||0:0;
+  let nat=1;
+  if(max>1){nat=Math.min(alvo,max);try{await q.applyVideoConstraints({advanced:[{zoom:nat}]})}catch(e){nat=1}}
+  const v2=box.querySelector("video");
+  const falta=Math.max(1,alvo/(nat>1?nat:1));
+  if(v2){v2.style.transformOrigin="50% 50%";v2.style.transform=falta>1.01?("scale("+falta+")"):""}
+  return{nativo:nat,falta};
+ };
  return q}
 $("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");last="";lastT=0;
  if(sc)return camOff();
@@ -1555,6 +1611,7 @@ $("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");las
    try{await loadLib("qr")}catch(e){throw{name:"LibFail"}}
    sc=await startLib(box)}
   addLaser(box);
+  zoomBarra(true);
   /* registra o que este aparelho realmente conseguiu */
   CAMDIAG.aparelho=camAparelho();
   CAMDIAG.leitor=(sc&&sc.mdoLeitor)||(nf?"nativo":"biblioteca");
@@ -1652,6 +1709,14 @@ async function cadPorFoto(f){
 }
 $("cadPho").onclick=()=>{initAudio();if(!cadPermitido())return toast("Só o administrador cadastra produto.",true);$("cadPh").click()};
 $("cadPh").onchange=e=>{const f=e.target.files[0];e.target.value="";cadPorFoto(f)};
+/* ===== Barra de zoom embaixo do visor ===== */
+(function(){
+ const r=$("zoomR");if(!r)return;
+ const mudar=()=>{const z=Number(r.value)||1;const v=$("zoomV");if(v)v.textContent=z.toFixed(1).replace(".",",")+"x"};
+ r.addEventListener("input",mudar);
+ r.addEventListener("change",()=>{zoomAplicar(Number(r.value))});
+ r.addEventListener("input",()=>{if(sc)zoomAplicar(Number(r.value))});
+})();
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
