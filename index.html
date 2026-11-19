@@ -44,7 +44,7 @@ main{padding:14px;max-width:640px;margin:0 auto}
 .seg button.on.out{background:var(--r);color:#fff}.seg button.on.in{background:var(--b);color:#fff}
 .btn{border:0;border-radius:12px;padding:13px 16px;font-weight:700;font-size:15px;background:var(--b);color:#fff;width:100%;cursor:pointer}
 .btn.red{background:var(--r)}.btn.ghost{background:var(--bl);color:var(--tx)}
-#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;height:min(26vh,190px)}
+#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;height:min(34vh,240px)}
 #cam video,#cam canvas{width:100%;height:100%;object-fit:contain;display:block}
 /* barra de zoom embaixo do visor */
 #zoomBar{display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;flex-wrap:wrap}
@@ -60,7 +60,20 @@ main{padding:14px;max-width:640px;margin:0 auto}
 #pbiFiltros summary{cursor:pointer;font-weight:600;padding:4px 0}
 @media(min-width:760px){#pbiFiltros summary{display:none}}
 #pbi .item[title]{cursor:pointer}
+/* Consulta por foto usa outro visor (#qCamBox, criado na hora): mesma altura do Bipar */
+#qCamBox{height:min(34vh,240px);width:100%;max-width:100%}
+#qCamBox video,#qCamBox canvas{width:100%;height:100%;object-fit:contain;display:block}
+body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;height:min(34vh,240px);border-radius:0!important;border:0!important;border-bottom:3px solid var(--b)!important;margin-top:0!important;padding-top:env(safe-area-inset-top)}
 #zoomBar.on{display:flex}
+/* Visor na largura toda da tela: enquanto a camera roda, o visor e a barra de zoom
+   saem do cartao (que tem padding e limite de 640px) e viram uma faixa de borda a borda.
+   Sem a camera, tudo volta para dentro do cartao como antes. */
+body.camLarga #camW,body.camLarga #zoomBar{position:fixed;left:0;right:0;z-index:60}
+body.camLarga #camW{top:0;padding-top:env(safe-area-inset-top)}
+body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;height:min(34vh,240px)}
+body.camLarga #zoomBar{background:var(--card);border:0;border-bottom:1px solid var(--bd);border-radius:0;margin-top:0;padding:8px 12px}
+/* o laser acompanha o visor colado no topo */
+body.camLarga #gl{inset:env(safe-area-inset-top) 0 0 0;border-radius:0}
 #zoomBar input[type=range]{flex:1;min-width:80px;accent-color:var(--b2)}
 #zoomBar b{min-width:46px;text-align:right;font-size:15px}
 .row{display:flex;gap:8px;margin-top:10px}.row input{flex:1;min-width:0;border:2px solid var(--bd);background:var(--card);color:var(--tx);border-radius:12px;padding:12px;font-size:16px}
@@ -1271,6 +1284,7 @@ async function qCamOff(){
  const st=qState.sc;qState.sc=null;
  if(st){try{await st.stop()}catch(e){}}
  const box=$("qC");if(box)box.innerHTML="";
+ document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */
  const b=$("qCam");if(b)b.textContent="📷 Buscar por código de barras";
 }
 /* --- câmera da aba Estoque: reusa os mesmos motores da aba Bipar (nativo → biblioteca) --- */
@@ -1291,6 +1305,7 @@ $("qCam").onclick=async()=>{
    sc=await startLibQ($("qCamBox"));
   }
   qState.sc=sc;addLaser($("qCamBox"));
+  document.body.classList.add("camLarga");      /* visor na largura toda da tela */
   $("qCam").textContent="⏹ Parar busca";
   const aviso=$("camMsg").dataset.zoom?(" "+$("camMsg").dataset.zoom):"";
   qMsg("✅ Aponte a etiqueta para consultar."+aviso);
@@ -1720,7 +1735,8 @@ $("undo").onclick=()=>{
  if(!confirm("Desfazer a sua última bipada: "+TN[minha.t]+" de "+minha.q+" un. — "+nomeP(minha.c)+"?"))return;
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
-async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
+async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
+ document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 /* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
 const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
 const FMT=["code_128","ean_13","qr_code"];   /* reserva, usada quando o aparelho não diz o que suporta */
@@ -1933,6 +1949,7 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
    try{await loadLib("qr")}catch(e){throw{name:"LibFail"}}
    sc=await startLib(box)}
   addLaser(box);
+  document.body.classList.add("camLarga");      /* visor na largura toda da tela */
   zoomBarra(true);
   /* registra o que este aparelho realmente conseguiu */
   CAMDIAG.msAbertura=Math.round(((window.performance&&performance.now)?performance.now():Date.now())-t0);
