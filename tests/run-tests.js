@@ -28,14 +28,26 @@ function estado(env) {
   return run(env, `({PP,M,U,REQ,CNT,MIN,cur,idx:idx,idxs:Object.keys(idx),bal:bal(),vivo:vivo,AUD})`);
 }
 /* login como primeiro administrador */
-function comoAdmin(env) {
+async function comoAdmin(env) {
   env.document.getElementById("lgN").value = "Ricardo Kato";
   env.document.getElementById("lgL").value = "ricardo";
   env.document.getElementById("lgP").value = "senha123";
   run(env, "lgSubmit()");
+  /* o hash da senha e assincrono: espera o usuario existir de verdade, sem prazo fixo */
+  await esperar(env, "!!(cur && cur.l)");
   return run(env, "cur");
 }
 /* espera as promises disparadas por lgSubmit (hash assíncrono) */
+/* Espera o app terminar o que disparou (hash assincrono) sem prazo fixo:
+   checa a condicao e sai assim que ela vale. Prazo de 2 s para nao travar o CI. */
+async function esperar(env, cond, ms = 2000) {
+  const fim = Date.now() + ms;
+  for (;;) {
+    try { if (vm.runInContext(cond, env.ctx)) return true; } catch (e) { /* app no meio de uma atualizacao */ }
+    if (Date.now() > fim) return false;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
 const flush = () => new Promise((r) => setTimeout(r, 30));
 function login(env, l, p) {
   env.document.getElementById("lgL").value = l;
@@ -47,8 +59,10 @@ function login(env, l, p) {
 async function loginA(env, l, p) {
   env.document.getElementById("lgL").value = l;
   env.document.getElementById("lgP").value = p;
+  /* limpa a mensagem anterior: assim sabemos que a desta tentativa chegou */
+  run(env, '$("lgE").textContent=""');
   run(env, "lgSubmit()");
-  await flush();
+  await esperar(env, "cur || $('lgE').textContent !== ''");
   return run(env, "cur");
 }
 
