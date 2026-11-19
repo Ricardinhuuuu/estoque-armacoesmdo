@@ -553,6 +553,17 @@ function relDados(){
 }
 function drawRel(){
  const el=$("rel");if(!el)return;
+ if(!isA()){el.innerHTML="";return}   /* relatórios são só do administrador */
+ const baixar=(nome,texto)=>{
+  try{
+   const b=new Blob([texto],{type:"text/csv;charset=utf-8"});
+   const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=nome;
+   document.body.appendChild(a);a.click();a.remove();
+   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+   toast("Arquivo gerado: "+nome);
+  }catch(e){toast("Não foi possível gerar o arquivo.",true)}
+ };
+ const csv=(cab,linhas)=>[cab].concat(linhas).map(l=>l.map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(";")).join("\n");
  const d=relDados();
  let h='<div class="card"><h3>📊 Relatórios</h3><div class="row" style="gap:6px;flex-wrap:wrap">'+
   [7,30,90].map(n=>'<button type="button" class="btn'+(d.periodo===n?"":" ghost")+'" data-a="relP" data-n="'+n+'" style="width:auto">'+n+' dias</button>').join("")+
@@ -565,8 +576,37 @@ function drawRel(){
   (d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")||'<div class="mu">Nenhum abaixo do mínimo.</div>')+'</div>';
  h+='<div class="card"><h3>😴 Sem movimentação no período ('+d.semMov.length+')</h3>'+
   (d.semMov.slice(0,20).map(p=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="mu">'+esc(p[0])+'</span></div>').join("")||'<div class="mu">Todos movimentaram.</div>')+'</div>';
+ h+='<div class="card"><h3>⬇ Salvar os relatórios</h3>'+
+  '<button type="button" class="btn" data-a="relCSV1">⬇ Resumo do período (CSV)</button>'+
+  '<button type="button" class="btn ghost" data-a="relCSV2">⬇ Mais movimentados (CSV)</button>'+
+  '<button type="button" class="btn ghost" data-a="relCSV3">⬇ Por operador (CSV)</button>'+
+  '<button type="button" class="btn ghost" data-a="relCSV4">⬇ Sem movimentação (CSV)</button>'+
+  '<button type="button" class="btn ghost" data-a="relCSV5">⬇ Tudo num arquivo (CSV)</button>'+
+  '<div class="mu">Abre no Excel. O arquivo usa ponto e vírgula, como o Excel em português espera.</div></div>';
  el.innerHTML=h;
+ const hoje=new Date().toISOString().slice(0,10);
+ const nomeArq=n=>"mdo-relatorio-"+n+"-"+hoje+".csv";
+ const resumo=()=>[["Período (dias)",d.periodo],["Entradas",d.entradas],["Saídas",d.saidas],["Ajustes",d.ajustes],
+  ["Produtos abaixo do mínimo",d.baixo.length],["Produtos zerados",d.zerados.length],["Sem movimentação",d.semMov.length]];
  el.querySelectorAll("[data-a='relP']").forEach(b=>b.onclick=()=>{REL.dias=Number(b.dataset.n);drawRel()});
+ const acoes={
+  relCSV1:()=>baixar(nomeArq("resumo"),csv(["Indicador","Valor"],resumo())),
+  relCSV2:()=>baixar(nomeArq("mais-movimentados"),csv(["Código","Produto","Movimentações","Saídas"],d.produtos.map(p=>[p.codigo,p.nome,p.total,p.saidas]))),
+  relCSV3:()=>baixar(nomeArq("por-operador"),csv(["Login","Nome","Movimentações","Entradas","Saídas"],d.operadores.map(o=>[o.login,o.nome,o.total,o.entradas,o.saidas]))),
+  relCSV4:()=>baixar(nomeArq("sem-movimentacao"),csv(["Código","Produto","Cor"],d.semMov.map(p=>[p[0],p[1],p[2]]))),
+  relCSV5:()=>{
+   const partes=[];
+   partes.push(csv(["Indicador","Valor"],resumo()));
+   partes.push(csv(["Código","Produto","Movimentações","Saídas"],d.produtos.map(p=>[p.codigo,p.nome,p.total,p.saidas])));
+   partes.push(csv(["Login","Nome","Movimentações","Entradas","Saídas"],d.operadores.map(o=>[o.login,o.nome,o.total,o.entradas,o.saidas])));
+   partes.push(csv(["Código","Produto","Cor"],d.semMov.map(p=>[p[0],p[1],p[2]])));
+   baixar(nomeArq("completo"),partes.join("\n\n"));
+  }
+ };
+ el.querySelectorAll("[data-a^='relCSV']").forEach(b=>b.onclick=()=>{
+  if(!isA())return toast("Só o administrador exporta relatórios.",true);
+  try{acoes[b.dataset.a]();audit("EXPORTAÇÃO","relatório "+b.dataset.a)}catch(e){toast("Não foi possível gerar o arquivo.",true)}
+ });
 }
 /* ===== Seção 10.3 — Aviso de produto sem movimentação (período configurável) ===== */
 const PARADO=ls("mdo_parado",null)||{dias:0,ativo:true}; /* 0 = desligado */
@@ -1229,7 +1269,9 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
   '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
- h+='<div class="card"><h3>📷 Diagnóstico da câmera</h3><div class="mu" id="camD">'+esc(camDiagTexto())+'</div>'+
+ h+='<div class="card"><h3>📷 Diagnóstico da câmera</h3><div class="mu" id="camA">Aparelho: '+esc(camAparelho())+'</div>'+
+  '<div class="mu" id="camD">'+esc(camDiagTexto())+'</div>'+
+  '<button type="button" class="btn" data-a="camCopiar">📋 Copiar diagnóstico</button>'+
   '<button type="button" class="btn ghost" data-a="camZerar">🔄 Recomeçar medição da câmera</button></div>';
  h+='<div id="parCard"></div>';
  h+='<div id="opRel"></div>';
@@ -1264,6 +1306,7 @@ async function act(a,i){
    if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
    audit("CONTA SERVIDOR",i,acaoMap[a]);act("ctListar");
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
+ if(a==="camCopiar"){camDiagCopiar();return}
  if(a==="camZerar"){
   CAMDIAG.aparelho="";CAMDIAG.leitor="";CAMDIAG.zoomMax=0;CAMDIAG.digital=0;CAMDIAG.lidas=0;CAMDIAG.falhas=0;CAMDIAG.ultima=0;
   camDiagSalvar();audit("DIAGNÓSTICO DA CÂMERA","zerado");
@@ -1395,6 +1438,28 @@ function camErr(e){const n=(e&&e.name)||String(e);
 const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0};
 function camDiagSalvar(){CAMDIAG.ultima=Date.now();try{localStorage.setItem("mdo_camdiag",JSON.stringify(CAMDIAG))}catch(e){}}
 function camDiagLer(){return ls("mdo_camdiag",null)}
+/* nome legível do aparelho — só para saber qual é qual ao comparar iPhone e Android */
+function camAparelho(){
+ const ua=String(navigator.userAgent||"");
+ let nome="";
+ const m=ua.match(/iPhone|iPad|Android[^;)]*/);
+ if(/iPhone/.test(ua))nome="iPhone";
+ else if(/iPad/.test(ua))nome="iPad";
+ else if(m)nome=m[0].replace(/Android\s*/,"Android ");
+ else nome="Computador";
+ if(/Safari/.test(ua)&&!/Chrome|CriOS/.test(ua))nome+=" · Safari";
+ else if(/Chrome|CriOS/.test(ua))nome+=" · Chrome";
+ return nome;
+}
+/* texto que o usuário copia e manda (WhatsApp, e-mail) — mesma informação da tela */
+function camDiagCopiar(){
+ const t=camDiagTexto();
+ const linha="📷 MDO Estoque — diagnóstico da câmera\nAparelho: "+camAparelho()+"\n"+t.replace(/ · /g,"\n");
+ if(navigator.clipboard&&navigator.clipboard.writeText){
+  navigator.clipboard.writeText(linha).then(()=>toast("Diagnóstico copiado. Cole no WhatsApp e me mande."),()=>alert(linha));
+ }else alert(linha);
+ return linha;
+}
 function camDiagTexto(){
  const d=camDiagLer();
  if(!d)return "A câmera ainda não foi usada neste aparelho.";
@@ -1491,6 +1556,7 @@ $("camBtn").onclick=async()=>{initAudio();const box=$("cam"),msg=$("camMsg");las
    sc=await startLib(box)}
   addLaser(box);
   /* registra o que este aparelho realmente conseguiu */
+  CAMDIAG.aparelho=camAparelho();
   CAMDIAG.leitor=(sc&&sc.mdoLeitor)||(nf?"nativo":"biblioteca");
   const zz=(sc&&sc.mdoZoom)||null;
   CAMDIAG.zoomMax=zz?Number(zz.max)||0:0;
