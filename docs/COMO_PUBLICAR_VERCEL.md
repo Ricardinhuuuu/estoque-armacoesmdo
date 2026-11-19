@@ -1,38 +1,18 @@
 # Como publicar na Vercel — passo a passo
 
 **Projeto:** MDO Estoque (`Ricardinhuuuu/estoque-armacoesmdo`)
-**Situação:** todo o trabalho está no GitHub em **9 PRs encadeados**. A `main` está **intacta** (versão antiga).
-A Vercel publica a **`main`** — por isso, enquanto os PRs não forem mesclados, você continua vendo a versão antiga.
+**Situação:** **tudo já está na `main`.** O trabalho foi entregue em dois PRs e ambos foram mesclados.
 
----
-
-## O caminho mais simples (recomendado)
-
-Cada PR foi feito **em cima do anterior**, então eles precisam ser mesclados **na ordem**:
-
-**#1 → #2 → #3 → #4 → #5 → #6 → #7 → #8 → #9 → #10**
-
-| Ordem | PR | O que traz |
+| PR | O que trouxe | Estado |
 |---|---|---|
-| 1º | [#1](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/1) | Revisão dos 15 itens |
-| 2º | [#2](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/2) | Etapa 1 — câmera |
-| 3º | [#3](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/3) | Etapa 2 — busca por código e foto |
-| 4º | [#4](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/4) | Etapa 3 — sincronização |
-| 5º | [#5](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/5) | Etapa 4 — contas no servidor |
-| 6º | [#6](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/6) | Etapa 5 — painel, relatórios, Power BI |
-| 7º | [#7](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/7) | Etapa 6 — desempenho, segurança, publicação |
-| 8º | [#8](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/8) | 10.1 — cadastro por foto |
-| 9º | [#9](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/9) | 10.2 e 10.3 — operador e produtos parados |
-| 10º | [#10](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/10) | Câmera: visor menor, imagem inteira, barra de zoom |
+| [#1](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/1) | Revisão dos 15 itens | mesclado |
+| [#12](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/12) | Etapas 1 a 6, Seções 9, 10.1–10.3 e 11 (versão 6.4.0) | mesclado |
+| [#13](https://github.com/Ricardinhuuuu/estoque-armacoesmdo/pull/13) | Câmera: visor compacto, botões de zoom, bipagem contínua, foto em ondas (versão 6.5.0) | mesclado |
 
-### Para cada PR, um por um
-1. Abra o PR no GitHub.
-2. Confira o rodapé: deve dizer **“Able to merge”** (sem conflito).
-3. Clique em **Merge pull request** → **Confirm merge**.
-4. Só então abra o próximo da lista.
+Os PRs #2 a #9 foram fechados **sem** merge: o conteúdo deles já estava nos PRs acima.
+Não há nada a mesclar — a `main` é a versão completa.
 
-> **Por que nesta ordem:** cada PR contém o anterior. Mesclar fora de ordem gera conflito e você teria
-> que resolver à mão. Se algum disser “conflito”, **pare** e me avise qual — não tente resolver sozinho.
+> Se você já mesclou tudo, pule direto para **“Depois de mesclar: a Vercel publica sozinha”**.
 
 ---
 
@@ -55,7 +35,7 @@ Se o projeto na Vercel já está ligado ao repositório, **cada merge na `main` 
 Coloquei a **versão no rodapé do app**: role até o fim e leia
 
 ```
-MDO Estoque · versão 6.3.0 · 2026-02
+MDO Estoque · versão 6.5.0
 ```
 
 - Se **aparecer** isso → a publicação está atualizada.
