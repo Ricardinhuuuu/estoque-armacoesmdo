@@ -13,16 +13,25 @@ mdo-estoque/
 ├── README.md                        # Este arquivo
 ├── index.html                       # Aplicativo (arquivo único) — é este que vai para o deploy
 ├── manifest.webmanifest             # Nome, ícone e modo standalone ao instalar na tela de início
+├── vendor/
+│   ├── html5-qrcode.min.js          # Leitor de código de barras empacotado (funciona sem internet)
+│   └── html5-qrcode.LICENSE         # Licença Apache-2.0 da biblioteca
 ├── src/
 │   └── index_versao6.html           # Cópia idêntica de index.html (referência do prompt mestre)
 ├── docs/
-│   └── PROMPT_MESTRE_BASE44.md      # Especificação técnica completa e etapas obrigatórias (Base44)
+│   ├── ETAPA0_DIAGNOSTICO.md        # Diagnóstico técnico: backend, banco, riscos, plano de backup
+│   ├── ETAPA1_CAMERA.md             # Câmera: zoom 3,4x, desempenho, biblioteca empacotada
+│   ├── ETAPA2_BUSCA_FOTO.md         # Consulta por código de barras e foto na aba Estoque
+│   ├── PROMPT_MESTRE_BASE44.md      # Especificação herdada (legado: o Base44 não é mais usado)
+│   ├── ETAPA3_SINCRONIZACAO.md      # Como ligar a sincronização na Vercel + Postgres
+│   ├── ETAPA4_CONTAS_SERVIDOR.md    # Login, autocadastro e admin com segurança no servidor
+│   ├── ETAPA5_PAINEL_RELATORIOS.md  # Painel, histórico, relatórios, inventário, alertas e Power BI
+│   └── ETAPA6_FINAL.md              # Desempenho, testes finais, segurança e publicação
 ├── tests/
-│   ├── run-tests.js                 # 36 testes automatizados das correções
+│   ├── run-tests.js                 # 62 testes automatizados (revisão + Etapas 1 e 2)
 │   └── dom-harness.js               # Mini-DOM para rodar os testes no Node
 └── assets/
     ├── Icone_MDO.png                # Ícone oficial do aplicativo (617x617, original)
-    ├── Icone_MDO_1024.png           # Ícone em 1024x1024 (lojas e materiais)
     ├── icon-180.png                 # Ícone 180x180 (apple-touch-icon, embutido no index.html)
     ├── icon-192.png                 # Ícone 192x192 (manifest)
     └── Codigo_de_barra.png          # Etiqueta real de armação (80202503194 · 5CL661045417140C4)
@@ -39,7 +48,7 @@ mdo-estoque/
 
 ## ▶️ Como rodar
 
-- **Publicar:** qualquer hospedagem estática (GitHub Pages, Netlify, Base44) apontando para `index.html`.
+- **Publicar:** **Vercel** (a pasta `api/` sobe junto como funções serverless).
   A câmera só funciona em `https://` (ou em `localhost`).
 - **Testar localmente:** abra o `index.html` no navegador. Sem `https`, use a digitação manual ou a foto.
 
@@ -69,26 +78,30 @@ dos botões, metadados de PWA, contagem de inventário e dados antigos do `local
 
 ---
 
-## 🔐 O que ainda depende do backend (Base44)
+## 🔐 Backend na Vercel
 
-O app é 100% cliente. Isso resolve o uso diário no aparelho, mas **não** substitui autenticação de
-servidor: quem tiver o aparelho pode alterar o `localStorage`. Antes de virar produto multiusuário de
-verdade, precisam ir para o backend (Seção 6.1 de `docs/PROMPT_MESTRE_BASE44.md`):
+O app funciona sozinho no aparelho, mas o estoque **compartilhado** depende da API em `api/`
+(funções serverless da Vercel + Postgres). Já implementado na Etapa 3:
 
-- usuários, senhas (hash com salt) e papéis;
-- contagem de tentativas, bloqueio e desbloqueio;
-- auditoria com data, hora e responsável;
-- sincronização entre aparelhos (hoje é manual, pelo backup JSON).
+- sincronização de movimentações entre aparelhos, com ID único (sem duplicar) e fila de reenvio;
+- cálculo e validação de saldo **no servidor**;
+- auditoria com data, hora, responsável, produto, quantidade, tipo e aparelho.
+
+Configuração (`DATABASE_URL` e `SYNC_TOKEN`) e passo a passo: `docs/ETAPA3_SINCRONIZACAO.md`.
+Etapa 4 (já implementada, `api/contas.js`): login validado no servidor, PBKDF2-SHA256 com sal,
+bloqueio após 3 tentativas, desativação, senha provisória com troca obrigatória e painel de contas
+para o administrador. Ver `docs/ETAPA4_CONTAS_SERVIDOR.md`.
 
 ---
 
-## 🚀 Como Utilizar este Repositório com o Base44
+## 🚀 Como usar este repositório
 
-1. Suba os arquivos deste repositório no **GitHub**.
-2. Conecte ou importe o repositório no **Base44** (ou anexe `docs/PROMPT_MESTRE_BASE44.md`,
-   `src/index_versao6.html`, `assets/Icone_MDO_1024.png` e `assets/Codigo_de_barra.png`).
-3. Instrua a IA a seguir **estritamente a ordem da Seção 2** de `docs/PROMPT_MESTRE_BASE44.md`, validando
-   o **Checklist Obrigatório (Seção 11)** ao final de cada etapa antes de autorizar a próxima.
+1. Suba os arquivos no **GitHub** (ou use a branch/PR em revisão).
+2. Conecte o repositório na **Vercel** — o `index.html` é servido na raiz e a pasta `api/` vira funções.
+3. Crie o Postgres na Vercel e defina `DATABASE_URL` e `SYNC_TOKEN` (ver `docs/ETAPA3_SINCRONIZACAO.md`).
+4. No app: **Admin › 🔄 Sincronização**, cole o endereço e o segredo e salve.
+
+O `docs/PROMPT_MESTRE_BASE44.md` fica no repositório como registro histórico; o Base44 não é mais usado.
 
 ---
 
