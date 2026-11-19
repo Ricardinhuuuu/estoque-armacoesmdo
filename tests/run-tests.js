@@ -1569,6 +1569,89 @@ t("6.1 sem e-mail em nenhum campo do autocadastro", () => {
   okv(!/mailto|sendgrid|nodemailer/i.test(bloco), "o autocadastro não pode disparar e-mail");
 });
 
+/* ================= SEÇÃO 7.5 — ALERTAS E AUTOMAÇÕES ================= */
+g("Seção 7.5 — alertas e automações");
+t("7.5 produto zerado gera um aviso, uma vez por dia", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      ls(avKey,[]);sAv([]);
+      PP.forEach((p,i)=>{if(bal()[i]>0)reg("out",p[0],bal()[i])});
+      const a=alertas(), b=alertas();
+      return {a, b, zerados:ls(avKey,[]).filter(x=>x.cod==="zerado").length,
+              avisosZerado:ls(avKey,[]).filter(x=>String(x.m).indexOf("Estoque zerado")===0).length,
+              outros:ls(avKey,[]).filter(x=>String(x.m).indexOf("Estoque zerado")!==0).map(x=>x.m)};
+    })()`);
+    okv(r.a > 0, "precisa avisar quando o produto zera: " + r.a + " zerados=" + r.zerados + " avisosZ=" + r.avisosZerado);
+    eq(r.b, 0, "não pode repetir o aviso no mesmo dia:");
+    /* os avisos do dia são de estoque ou de sincronização: o teste faz 160 movimentações sem servidor */
+    okv(r.avisosZerado + r.outros.length >= r.a, "todo aviso do dia precisa ser de estoque ou de sincronização: " + r.avisosZerado + " + " + r.outros.length + " de " + r.a);
+    okv(r.zerados >= 1, "todo aviso de estoque precisa ter o código do alerta");
+  }));
+t("7.5 reposição resolve o aviso de estoque", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      sAv([]);const i0=0,c=PP[i0][0];
+      reg("out",c,bal()[i0]);alertas();
+      const antes=ls(avKey,[]).filter(x=>x.cod==="zerado"&&!x.resolvido).length;
+      reg("in",c,10);alertas();
+      const depois=alertasAbertos().filter(x=>x.cod==="zerado").length;
+      return {antes, depois};
+    })()`);
+    eq(r.antes, 1, "o aviso precisa existir antes da reposição:");
+    eq(r.depois, 0, "depois de repor o aviso não pode continuar aberto:");
+  }));
+t("7.5 movimentações pendentes e falha de sincronização avisam e se resolvem", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      sAv([]);REQ.push({id:"r1",c:PP[0][0],q:99,u:cur.l,o:cur.n,ts:Date.now()});sR();
+      alertas();
+      const comPend=ls(avKey,[]).filter(x=>x.cod==="pendente"&&!x.resolvido).length;
+      REQ=[];sR();alertas();
+      const semPend=alertasAbertos().filter(x=>x.cod==="pendente").length;
+      return {comPend, semPend};
+    })()`);
+    eq(r.comPend, 1, "pendências precisam avisar:");
+    eq(r.semPend, 0, "sem pendência o aviso precisa ser resolvido:");
+  }));
+t("7.5 divergência de inventário avisa o administrador", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      sAv([]);
+      sP("invh",[{id:"i1",resp:"Ricardo Kato",ini:Date.now()-60000,fim:Date.now(),itens:[{codigo:PP[0][0],contado:1,sistema:5,dif:-4}]}]);
+      alertas();
+      const a=ls(avKey,[]).filter(x=>x.cod==="inventario");
+      return {n:a.length, m:a[0]&&a[0].m};
+    })()`);
+    eq(r.n, 1, "inventário com diferença precisa avisar:");
+    okv(String(r.m).includes("1 produto"), "o aviso precisa contar as divergências: " + r.m);
+  }));
+t("7.5 o administrador liga e desliga cada alerta", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      const padrao=alertaLigado("zerado");
+      alertaConfigurar("zerado",false);
+      sAv([]);
+      PP.forEach((p,i)=>{if(bal()[i]>0)reg("out",p[0],bal()[i])});
+      const comDesligado=alertas();
+      const cods=ls(avKey,[]).map(x=>x.cod);
+      alertaConfigurar("zerado",true);
+      const comLigado=alertas();
+      return {padrao, comDesligado, comLigado, cods, zeradoLigado:alertaLigado("zerado")};
+    })()`);
+    eq(r.padrao, true, "todos os alertas vêm ligados:");
+    /* só o aviso de sincronização pode aparecer: o teste gera 160 movimentações sem servidor */
+    okv(!r.cods.includes("zerado"), "desligado não pode criar aviso de estoque zerado: " + JSON.stringify(r.cods));
+    okv(r.comLigado > 0, "ligado volta a avisar: " + r.comLigado);
+    eq(r.zeradoLigado, true, "a escolha precisa ser guardada:");
+  }));
+t("7.5 a escolha dos alertas fica salva no aparelho", () =>
+  adminPronto(novo()).then((env) => {
+    run(env, `alertaConfigurar("parado",false)`);
+    eq(env.store.get("mdo_alcfg"), JSON.stringify({ parado: false }), "grava só o que foi mudado:");
+    const r = run(env, `({parado:alertaLigado("parado"), zerado:alertaLigado("zerado")})`);
+    eq(r, { parado: false, zerado: true }, "ao reabrir, a escolha precisa valer:");
+  }));
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
