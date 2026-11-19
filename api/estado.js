@@ -34,6 +34,9 @@ module.exports = async function handler(req, res) {
   if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (DATABASE_URL)", modo: "local" }); return; }
 
   const desde = Number((req.query && req.query.desde) || 0) || 0;
+  /* ETAPA 6: não carregar tudo de uma vez — pagina as movimentações */
+  const tamanho = Math.min(500, Math.max(1, Number((req.query && req.query.tamanho) || 200) || 200));
+  const pagina = Math.max(1, Number((req.query && req.query.pagina) || 1) || 1);
 
   try {
     await db.query(`create table if not exists mdo_movimentos (
@@ -43,10 +46,12 @@ module.exports = async function handler(req, res) {
     await db.query(`create table if not exists mdo_produtos (
       codigo text primary key, descricao text, cor text, inicial integer not null default 0)`);
 
-    const produtos = (await db.query("select codigo, descricao, cor, inicial from mdo_produtos")).rows || [];
+    const totalProd = await db.query("select count(*)::int as n from mdo_produtos");
+    const produtos = (await db.query("select codigo, descricao, cor, inicial from mdo_produtos order by codigo asc")).rows || [];
+    const totalMov = await db.query("select count(*)::int as n from mdo_movimentos where recebido_em >= $1", [desde]);
     const movs = (await db.query(
-      "select id, tipo, codigo, qtd, operador, nome_operador, ts, recebido_em, aparelho, estorno_de, obs from mdo_movimentos where recebido_em >= $1 order by ts asc",
-      [desde])).rows || [];
+      "select id, tipo, codigo, qtd, operador, nome_operador, ts, recebido_em, aparelho, estorno_de, obs from mdo_movimentos where recebido_em >= $1 order by ts asc, id asc limit $2 offset $3",
+      [desde, tamanho, (pagina - 1) * tamanho])).rows || [];
 
     res.status(200).json({
       ok: true,
@@ -56,6 +61,11 @@ module.exports = async function handler(req, res) {
         ts: Number(m.ts), recebidoEm: Number(m.recebido_em), aparelho: m.aparelho,
         est: m.estorno_de || undefined, obs: m.obs || undefined,
       })),
+      pagina,
+      tamanho,
+      totalProdutos: Number((totalProd.rows && totalProd.rows[0] && totalProd.rows[0].n) || 0),
+      totalMovimentos: Number((totalMov.rows && totalMov.rows[0] && totalMov.rows[0].n) || 0),
+      paginas: Math.max(1, Math.ceil(Number((totalMov.rows && totalMov.rows[0] && totalMov.rows[0].n) || 0) / tamanho)),
       servidorEm: Date.now(),
     });
   } catch (e) {
