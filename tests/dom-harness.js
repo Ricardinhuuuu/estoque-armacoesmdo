@@ -110,6 +110,8 @@ function makeEnv(opts = {}) {
     addEventListener() {}, removeEventListener() {},
     fetch: async () => { throw new Error("rede indisponível no teste"); },
     window: {}, URL: { createObjectURL: () => "blob:x", revokeObjectURL() {} },
+    /* impressão: registra a chamada em vez de abrir a caixa de diálogo */
+    print: () => { (env.__prints = env.__prints || []).push(Date.now()); },
     Blob: class { constructor() {} },
     /* timers de verdade, como no navegador: o app usa corridas com tempo limite.
        setTimeout/clearTimeout entram abaixo (versão controlada) para não segurar o processo. */

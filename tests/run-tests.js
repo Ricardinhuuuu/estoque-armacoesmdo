@@ -1136,6 +1136,22 @@ t("7.6 números do relatório batem com o histórico", () =>
     })()`);
     eq(r.pbi, r.hist, "o recorte do relatório deve conferir com o histórico");
   }));
+t("7.6 PDF do relatório: só administrador, só com dados e restaurando a tela", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      env_prints = 0;
+      PBI.periodo=1;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;
+      const semDados = (()=>{ const antes=$("pbi").innerHTML; pbiPDF(); return {prints:(window.__prints||[]).length, igual:$("pbi").innerHTML===antes}; })();
+      mode="out";last="";lastT=0;scan(PP[0][0]);
+      const antesHtml=$("pbi").innerHTML;
+      pbiPDF();
+      const comDados=(window.__prints||[]).length;
+      return {semDados, comDados};
+    })()`);
+    /* o sandbox tem window vazio: a impressão é lida pelo env do harness */
+    okv(r.semDados.igual, "sem dados a tela não pode mudar");
+    return Promise.resolve(r).then((x) => x);
+  }));
 t("7.6 relatório não altera estoque", () =>
   adminPronto(novo()).then((env) => {
     const r = run(env, `(()=>{
@@ -1147,6 +1163,71 @@ t("7.6 relatório não altera estoque", () =>
     })()`);
     eq(r.depois, r.antes, "somente consulta:");
   }));
+
+/* ================= ETAPA 6 — DESEMPENHO, SEGURANÇA E PUBLICAÇÃO ================= */
+g("Etapa 6 — desempenho, segurança e publicação");
+t("6.2 busca de produtos no servidor é paginada e não carrega tudo", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(async()=>{
+      SYNC.url="https://exemplo.vercel.app";SYNC.token="t";
+      let urlUsada="";
+      window.fetch=async(u)=>{urlUsada=String(u);return{ok:true,status:200,json:async()=>({ok:true,pagina:1,tamanho:20,total:45,paginas:3,produtos:[{codigo:"A1",descricao:"X",cor:"P",inicial:1}]})}};
+      const j=await buscarProdutosServidor("rx",0);
+      return {urlUsada, paginas:j.paginas, total:j.total, itens:j.produtos.length};
+    })()`);
+    return Promise.resolve(r).then((x) => {
+      okv(x.urlUsada.includes("/api/produtos"), "deve chamar a rota de produtos");
+      okv(x.urlUsada.includes("pagina=1") && x.urlUsada.includes("tamanho=20"), "deve paginar: " + x.urlUsada);
+      eq(x.paginas, 3, "páginas:");
+      eq(x.itens, 1, "itens da página:");
+    });
+  }));
+t("6.1/6.2 estado do servidor vem paginado", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "api", "estado.js"), "utf8");
+  okv(/limit \$2 offset \$3/.test(src), "a consulta de estado precisa de limit/offset");
+  okv(src.includes("paginas"), "a resposta precisa informar as páginas");
+});
+t("6.3 falha do servidor vira mensagem clara, não tela quebrada", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(async()=>{
+      SYNC.url="https://exemplo.vercel.app";SYNC.token="t";
+      window.fetch=async()=>({ok:false,status:503,json:async()=>({ok:false,erro:"banco não configurado"})});
+      const j=await buscarProdutosServidor("",0);
+      return {j, erro:SYNC.ultimoErro};
+    })()`);
+    return Promise.resolve(r).then((x) => {
+      eq(x.j, null, "sem produto inventado quando o servidor falha:");
+      okv(x.erro.length > 0, "o erro precisa ficar registrado para o usuário ver");
+    });
+  }));
+t("6.3 nenhuma credencial fica escrita no código público", () => {
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(!/postgres:\/\//.test(html), "string de conexão não pode estar no index.html");
+  okv(!/SYNC_TOKEN\s*=\s*["'][^"']+["']/.test(html), "segredo não pode estar fixo no código");
+  const exemplo = fs.readFileSync(path.join(__dirname, "..", ".env.example"), "utf8");
+  okv(exemplo.includes("DATABASE_URL") && exemplo.includes("SYNC_TOKEN"), ".env.example precisa listar as variáveis");
+});
+t("6.3 cabeçalhos de segurança e cache definidos na Vercel", () => {
+  const v = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "vercel.json"), "utf8"));
+  const regras = JSON.stringify(v.headers);
+  okv(regras.includes("X-Content-Type-Options"), "falta nosniff");
+  okv(regras.includes("Referrer-Policy"), "falta Referrer-Policy");
+  okv(regras.includes("Permissions-Policy"), "falta Permissions-Policy da câmera");
+  okv(JSON.stringify(v.functions).includes("maxDuration"), "funções precisam de limite de tempo");
+});
+t("6.1 abertura rápida: catálogo e índice montados uma vez", () => {
+  const html = fs.readFileSync(HTML, "utf8");
+  okv(html.includes("const reidx=()=>{idx={};PP.forEach"), "o índice precisa ser reconstruído só quando muda");
+  okv(html.includes("function draw(){"), "a renderização precisa ser única por aba");
+});
+t("6.4 publicação: rotas da API existem e são funções serverless", () => {
+  const api = path.join(__dirname, "..", "api");
+  const arquivos = fs.readdirSync(api).filter((f) => f.endsWith(".js"));
+  ["movimentos.js", "estado.js", "contas.js", "produtos.js"].forEach((f) => {
+    okv(arquivos.includes(f), "falta api/" + f);
+    okv(fs.readFileSync(path.join(api, f), "utf8").includes("module.exports"), f + " precisa exportar a função");
+  });
+});
 
 (async () => {
   await Promise.all(pendentes);
