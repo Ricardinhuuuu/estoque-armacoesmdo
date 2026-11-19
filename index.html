@@ -84,7 +84,9 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 </style></head><body>
 <div id="lg"><div class="card"><h2 style="margin:0 0 4px">📦 Estoque MDO</h2><div class="mu" id="lgT"></div>
 <input class="in" id="lgN" placeholder="Seu nome completo" autocomplete="name"><input class="in" id="lgL" placeholder="Login" autocapitalize="none" autocomplete="username"><input class="in" id="lgP" type="password" placeholder="Senha" autocomplete="current-password">
-<div id="lgE"></div><div class="row" style="margin-top:8px"><button class="btn" id="lgB" style="flex:1"></button><button class="btn ghost" id="lgS" type="button" style="width:auto;display:none" aria-label="Mostrar ou ocultar a senha">👁</button></div></div></div>
+<div id="lgE"></div><div class="row" style="margin-top:8px"><button class="btn" id="lgB" style="flex:1"></button><button class="btn ghost" id="lgS" type="button" style="width:auto;display:none" aria-label="Mostrar ou ocultar a senha">👁</button></div>
+<button type="button" class="btn ghost" id="lgCad" style="margin-top:8px">👤 Sou novo aqui — criar meu acesso</button>
+<div class="mu" id="lgCadMsg" style="margin-top:6px"></div></div></div>
 <header><h1>📦 Estoque Armações MDO</h1><small>Bipagem automática pela câmera</small>
 <div class="op"><span id="who" style="flex:1"></span><button class="btn ghost" id="out" style="width:auto;padding:8px 14px">Sair</button></div></header>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -205,7 +207,8 @@ function audit(acao,alvo,extra){
 
 /* ===== Login / perfis ===== */
 function showLogin(){
- const f=!U.length;$("lg").style.display="flex";$("lgT").textContent=f?"Primeiro acesso: crie o administrador":"Entre com seu login e senha";
+ modoCad=false;
+ const f=!U.length;$("lg").style.display="flex";$("lgCad").style.display="";$("lgCadMsg").textContent="";$("lgT").textContent=f?"Primeiro acesso: crie o administrador":"Entre com seu login e senha";
  $("lgN").style.display=f?"block":"none";$("lgS").style.display=f?"none":"block";$("lgB").textContent=f?"Criar e entrar":"Entrar";$("lgE").textContent="";
  const u=f?null:U.find(x=>x.l===String($("lgL").value).trim().toLowerCase());
  $("lgB").disabled=!!(u&&u.st==="bloq");
@@ -226,6 +229,7 @@ function falhaTentativa(u){
   return "Acesso bloqueado: mais de 3 tentativas com senha incorreta. Entre em contato com o administrador."}
  sU();return "Login ou senha incorretos. Tentativas restantes: "+(3-u.t)+"."}
 async function lgSubmit(){initAudio();
+ if(modoCad)return cadastrarOperador();
  /* ETAPA 4 — com servidor configurado, quem valida a senha é o servidor */
  if(contasAtivas())return entrarNoServidor();const l=String($("lgL").value).trim().toLowerCase(),p=$("lgP").value;
  if(!l||!p){$("lgE").textContent="Preencha login e senha.";return}
@@ -242,6 +246,75 @@ async function lgSubmit(){initAudio();
  if(u.temp){cur=u;$("lg").style.display="none";$("lgP").value="";trocaObrig(u);return}
  enter(l)}
 $("lgB").onclick=()=>lgSubmit();
+/* ===== Seção 6.1 — autocadastro de operador direto na tela de início (sem e-mail) ===== */
+let modoCad=false;
+function nomeOK(n){
+ const p=String(n||"").trim().split(/\s+/).filter(x=>x.length>=2);
+ return p.length>=2;
+}
+function modoCadastro(ligar){
+ modoCad=!!ligar;
+ const t=$("lgT"),b=$("lgB"),n=$("lgN"),l=$("lgL"),c=$("lgCad"),m=$("lgCadMsg");
+ $("lgE").textContent="";
+ n.style.display=modoCad?"":"none";
+ l.disabled=false;l.value="";$("lgP").value="";$("lgP").type="password";
+ $("lgS").style.display=modoCad?"block":"none";
+ $("lgS").textContent="👁";
+ if(modoCad){
+  t.textContent="Criar meu acesso — só nome, login e senha. Nenhum e-mail é pedido.";
+  b.textContent="Criar meu acesso";
+  c.textContent="↩ Voltar para a entrada";
+  m.textContent="Seu acesso será de operador. O administrador é avisado do novo cadastro.";
+ }else{
+  t.textContent=U.length?"Entre com seu login e senha.":"Primeiro acesso: você será o administrador.";
+  b.textContent=U.length?"Entrar":"Criar administrador";
+  c.textContent="👤 Sou novo aqui — criar meu acesso";
+  m.textContent="";
+ }
+ b.onclick=()=>lgSubmit();
+}
+$("lgCad").onclick=()=>modoCadastro(!modoCad);
+/* com servidor configurado, quem cria a conta é o servidor (operador, nunca admin) */
+async function cadastroNoServidor(n,l,p){
+ $("lgB").disabled=true;
+ try{
+  const j=await apiContas("cadastrar",{nome:n,login:l,senha:p});
+  if(!j.ok){$("lgE").textContent=j.erro||"Não foi possível criar o acesso.";beep(false);return}
+  salvarSess(j);
+  audit("AUTOCADASTRO",l,"servidor");
+  avisar(j.aviso||("Novo operador cadastrado: "+n+" ("+l+")"),{alvo:l});
+  modoCadastro(false);$("lgN").value="";
+  enter(l);
+ }catch(e){$("lgE").textContent=(e&&e.message)||"Sem conexão com o servidor.";beep(false)}
+ finally{$("lgB").disabled=false}
+}
+function cadastrarOperador(){return cadOperador()}
+/* valida os 3 campos e devolve o erro (ou "" quando está tudo certo) */
+function cadValidar(n,l,p){
+ if(!nomeOK(n))return"Digite nome e sobrenome";
+ if(!l||/\s/.test(l))return"Escolha um login sem espaços.";
+ if(p.length<6)return"A senha precisa ter pelo menos 6 caracteres.";
+ if(!contasAtivas()&&U.some(x=>x.l===l))return"Este login já está em uso. Escolha outro.";
+ return"";
+}
+async function cadOperador(){
+ initAudio();
+ const n=$("lgN").value.trim(),l=String($("lgL").value||"").trim().toLowerCase(),p=$("lgP").value;
+ const erro=cadValidar(n,l,p);
+ if(erro){$("lgE").textContent=erro;return}
+ if(!nomeOK(n)){$("lgE").textContent="Digite nome e sobrenome";return}
+ if(!l||/\s/.test(l)){$("lgE").textContent="Escolha um login sem espaços.";return}
+ if(p.length<6){$("lgE").textContent="A senha precisa ter pelo menos 6 caracteres.";return}
+ if(contasAtivas()){await cadastroNoServidor(n,l,p);return}
+ if(U.some(x=>x.l===l)){$("lgE").textContent="Este login já está em uso. Escolha outro.";return}
+ const u={l,n,r:"operador",h:await H(l+p),st:"ativo",ts:Date.now(),t:0};
+ U.push(u);sU();
+ audit("AUTOCADASTRO",l,"tela de início");
+ avisar("Novo operador cadastrado: "+n+" ("+l+")",{alvo:l});
+ modoCadastro(false);$("lgN").value="";
+ $("lgE").textContent="Acesso criado. Você já pode entrar com o login e a senha que escolheu.";
+ enter(l);
+}
 $("lgP").onkeydown=e=>{if(e.key==="Enter")$("lgB").onclick()};
 $("lgS").onclick=()=>{const i=$("lgP");i.type=i.type==="password"?"text":"password";$("lgS").textContent=i.type==="password"?"👁":"🙈"};
 $("out").onclick=async()=>{await camOff();cur=null;sv(K.s,null);showLogin()};
