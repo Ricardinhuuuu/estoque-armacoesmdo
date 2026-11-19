@@ -28,7 +28,7 @@ mdo-estoque/
 │   ├── ETAPA5_PAINEL_RELATORIOS.md  # Painel, histórico, relatórios, inventário, alertas e Power BI
 │   └── ETAPA6_FINAL.md              # Desempenho, testes finais, segurança e publicação
 ├── tests/
-│   ├── run-tests.js                 # 62 testes automatizados (revisão + Etapas 1 e 2)
+│   ├── run-tests.js                 # 62 testes automatizados (revisão + Etapas 1 e 2); importação: `tests/importacao-tests.js`
 │   └── dom-harness.js               # Mini-DOM para rodar os testes no Node
 └── assets/
     ├── Icone_MDO.png                # Ícone oficial do aplicativo (617x617, original)
@@ -51,6 +51,15 @@ mdo-estoque/
 - **Publicar:** **Vercel** (a pasta `api/` sobe junto como funções serverless).
   A câmera só funciona em `https://` (ou em `localhost`).
 - **Testar localmente:** abra o `index.html` no navegador. Sem `https`, use a digitação manual ou a foto.
+
+## 📥 Importação de movimentações via Excel (v6.7.0)
+
+Admin › **Importar movimentações (Excel)**. Colunas: `codigo_sku`, `quantidade`, `tipo_movimentacao`, `observacao`.
+Tipos: `ENTRADA` (soma), `BAIXA` (subtrai), `AJUSTE` (soma com sinal) e `CONTAGEM` (define o saldo final; vira um ajuste só com a diferença).
+A planilha nunca grava o saldo direto: cada linha vira uma movimentação com id único, auditoria e fila de sincronização.
+Linhas inválidas são rejeitadas com o motivo e a linha do Excel; as válidas seguem (ou `IMP_CFG.atomico:true` para tudo ou nada).
+O botão **Baixar modelo** e **Exportar estoque atual no formato do modelo** geram `.xlsx` com os mesmos nomes de coluna da leitura.
+Configuração no `index.html`, constante `IMP_CFG`. Testes: `node tests/importacao-tests.js`.
 
 ## 🧪 Testes
 

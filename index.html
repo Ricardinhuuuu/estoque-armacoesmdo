@@ -55,15 +55,6 @@ main{padding:14px;max-width:640px;margin:0 auto}
 #zoomBar .zbtns{display:flex;gap:6px;margin-left:auto}
 #zoomBar .zbtns .pill.at{background:var(--b);color:#fff;border-color:var(--b)}
 /* Relatório (Power BI): uma coluna no celular, grade no computador */
-/* Cartões numéricos do relatório (visual 1 da Seção 7.6) */
-#pbi .pbiCards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-@media(min-width:560px){#pbi .pbiCards{grid-template-columns:repeat(5,minmax(0,1fr))}}
-#pbi .pc{border:1px solid var(--bd);border-radius:10px;padding:8px;text-align:center;background:var(--card)}
-#pbi .pc b{display:block;font-size:19px;line-height:1.2}
-#pbi .pc span{font-size:11px;color:var(--mu)}
-#pbi .pc.b{border-color:var(--b2)}#pbi .pc.b b{color:var(--b2)}
-#pbi .pc.r{border-color:var(--r)}#pbi .pc.r b{color:var(--r)}
-#pbi .pc.r2{border-color:#fca5a5}#pbi .pc.r2 b{color:#b91c1c}
 #pbi .pbiGrade{display:block}
 @media(min-width:760px){
  #pbi .pbiGrade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
@@ -512,17 +503,18 @@ async function sincronizar(opts){
  const botao=$("syB");if(botao)botao.disabled=true;
  try{
   let confirmados=0,recusados=0;
-  if(FILA.length){
-   const j=await enviarLote(FILA.map(m=>Object.assign({},m,{aparelho:m.aparelho||aparelhoId()})));
+  for(let g=0;FILA.length&&g<30;g++){
+   const j=await enviarLote(FILA.slice(0,200).map(m=>Object.assign({},m,{aparelho:m.aparelho||aparelhoId()})));
    confirmar(j.confirmados||[]);
-   confirmados=(j.confirmados||[]).length;
-   recusados=(j.recusados||[]).length;
+   confirmados+=(j.confirmados||[]).length;
+   const rec=j.recusados||[];recusados+=rec.length;
    /* recusado pelo servidor sai da fila e vira aviso: não pode ficar preso para sempre */
-   if(recusados){
-    const ids=new Set((j.recusados||[]).map(x=>x.id));
+   if(rec.length){
+    const ids=new Set(rec.map(x=>x.id));
     FILA=FILA.filter(m=>!ids.has(m.id));sF();
-    (j.recusados||[]).forEach(x=>avisar("Operação recusada pelo servidor: "+(x.motivo||"motivo não informado"),{alvo:x.id}));
+    rec.forEach(x=>avisar("Operação recusada pelo servidor: "+(x.motivo||"motivo não informado"),{alvo:x.id}));
    }
+   if(!(j.confirmados||[]).length&&!rec.length)break;
   }
   const novos=await receberNovidades();
   SYNC.ultimoOk=Date.now();SYNC.ultimoErro="";sS();
@@ -1017,15 +1009,6 @@ function pbiDados(){
   atualizadoEm:ultimo||Date.now(),
   baixo:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]),
   zerados:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v<=0),
-  /* Seção 7.6, visual 1: saldo líquido = entradas - saídas no recorte */
-  saldoLiquido:movs.reduce((a,m)=>a+(m.t==="in"?Math.abs(m.q):m.t==="out"?-Math.abs(m.q):0),0),
-  /* produtos que não tiveram NENHUMA movimentação no recorte */
-  semMov:PP.filter(p=>!movs.some(m=>m.c===p[0])),
-  /* divergências de inventário: inventário fechado com diferença */
-  /* divergências de inventário: contagens concluídas com pelo menos um item diferente.
-     A lista fica em localStorage (mdo_invh) e cada item tem {itens:[{dif}]} — não é uma
-     variável global, por isso a leitura é feita aqui, igual à dos alertas (7.5). */
-  diverg:ls("mdo_invh",[]).filter(inv=>(inv&&inv.itens||[]).some(x=>x&&x.dif!==0&&x.dif!==undefined)).length,
   parados:(function(){
    /* usa o periodo do proprio relatorio; se estiver desligado, cai no periodo do topo */
    const d=Number(PBI.diasParados)||Number(PBI.periodo)||30;
@@ -1131,24 +1114,9 @@ function drawPbi(){
    '<button type="button" class="btn ghost" id="pbiF" style="width:auto">🖨 PDF</button>'+
   '</div></details>'+(PBI.cruz?'<div class="mu" style="margin-top:6px">Filtro cruzado: '+esc(PBI.cruz.v)+' (toque de novo para tirar)</div>':'')+'</div>';
  h+='<div class="pbiGrade">';
- /* Visual 1 (Seção 7.6): os dez cartões numéricos do topo.
-    Azul para entradas e destaques; vermelho para saídas, zerados e alertas. */
- const uni=bal().reduce((a,v)=>a+v,0);
- const totEnt=d.dias.reduce((a,x)=>a+x.entradas,0),totSai=d.dias.reduce((a,x)=>a+x.saidas,0);
- const cards=[
-  ["Total de produtos",PP.length,""],
-  ["Unidades em estoque",uni,""],
-  ["Entradas",totEnt,"b"],
-  ["Saídas",totSai,"r"],
-  ["Saldo líquido",(d.saldoLiquido>0?"+":"")+d.saldoLiquido,d.saldoLiquido<0?"r":"b"],
-  ["Estoque baixo",d.baixo.length,d.baixo.length?"r2":""],
-  ["Zerados",d.zerados.length,d.zerados.length?"r":""],
-  ["Sem movimentação",d.semMov.length,d.semMov.length?"r2":""],
-  ["Pendentes",d.pendentes,d.pendentes?"r2":""],
-  ["Divergências",d.diverg,d.diverg?"r":""]
- ];
- h+='<div class="card pbiLargo"><div class="pbiCards">'+
-  cards.map(c=>'<div class="pc '+(c[2]||"")+'"><b>'+c[1]+'</b><span>'+c[0]+'</span></div>').join("")+'</div></div>';
+ h+='<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">'+
+  ['produtos|'+PP.length,'unidades|'+bal().reduce((a,v)=>a+v,0),'entradas|'+d.dias.reduce((a,x)=>a+x.entradas,0),'saídas|'+d.dias.reduce((a,x)=>a+x.saidas,0),'baixo|'+d.baixo.length,'zerados|'+d.zerados.length,'pendentes|'+d.pendentes].map(x=>{
+   const [rot,val]=x.split("|");return'<div style="flex:1 1 90px;border:1px solid var(--bd);border-radius:10px;padding:8px"><b style="font-size:18px">'+val+'</b><div class="mu" style="font-size:11px">'+rot+'</div></div>'}).join("")+'</div></div>';
  h+='<div class="card"><h3>Entradas e saídas por dia</h3>'+(d.dias.length?d.dias.map(x=>'<div class="item" data-a="pbiDia" data-v="'+x.dia+'"><span class="mu">'+x.dia.slice(5)+'</span><span style="display:flex;gap:4px;align-items:center;flex:1;margin-left:8px">'+
   '<span style="background:#1f7bff;height:10px;border-radius:3px;width:'+Math.round(x.entradas/maxDia*100)+'%"></span>'+
   '<span style="background:#dc2626;height:10px;border-radius:3px;width:'+Math.round(x.saidas/maxDia*100)+'%"></span></span>'+
@@ -1162,9 +1130,9 @@ function drawPbi(){
   d.parados.slice(0,20).map(x=>'<div class="item"><span>'+esc(x.nome)+'</span><span class="pill">parado</span></div>').join("")
   :'<div class="mu">Nenhum produto em alerta.</div>')+'</div>';
  h+='<div class="card"><h3>Detalhe ('+d.movs.length+')</h3>'+
-  '<div class="mu">'+(PBI.cruz?'recorte: '+esc(PBI.cruz.v)+' · ':'')+'toque num item para abrir a movimentação</div>'+
-  (d.movs.length?d.movs.slice().reverse().slice(0,50).map((m,mi)=>{const p=PP[idx[m.c]];
-   return '<div class="item" data-a="pbiDet" data-v="'+mi+'" title="'+esc(fmt(m.ts)+' · '+(TN[m.t]||m.t)+' '+m.q+' · '+(m.o||"")+' · '+(m.ap||"aparelho não informado"))+'"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="pill'+(m.t==="out"?" z":"")+'">'+(m.t==="out"?"-":"+")+Math.abs(m.q)+'</span></div>'
+  '<div class="mu">'+(PBI.cruz?'recorte: '+esc(PBI.cruz.v)+' · ':'')+'toque em um item para abrir os detalhes dele</div>'+
+  (d.movs.length?d.movs.slice().reverse().slice(0,50).map(m=>{const p=PP[idx[m.c]];
+   return '<div class="item" data-a="pbiMov" data-v="'+esc(m.c)+'" title="'+esc(fmt(m.ts)+' · '+(TN[m.t]||m.t)+' '+m.q+' · '+(m.o||""))+'"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="pill'+(m.t==="out"?" z":"")+'">'+(m.t==="out"?"-":"+")+Math.abs(m.q)+'</span></div>'
   }).join(""):'<div class="mu">Sem movimentação no recorte.</div>')+'</div>';
  el.innerHTML=h;
  const on=(id,fn)=>{const e=$(id);if(e)fn(e)};
@@ -1179,23 +1147,6 @@ function drawPbi(){
  on("pbiX",e=>e.onclick=()=>pbiCSVPivo());
  on("pbiF",e=>e.onclick=()=>pbiPDF());
  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
-  /* Seção 7.6: clicar num item do detalhe ABRE a movimentação individual */
-  if(b.dataset.a==="pbiDet"){
-   const lista=pbiDados().movs.slice().reverse().slice(0,50);
-   const m=lista[Number(b.dataset.v)];
-   if(!m)return;
-   const p=PP[idx[m.c]];
-   alert("Movimentação\n\n"+
-    "Produto: "+(p?p[1]+" "+p[2]:m.c)+"\n"+
-    "Código: "+m.c+"\n"+
-    "Data e hora: "+fmt(m.ts)+"\n"+
-    "Tipo: "+(TN[m.t]||m.t)+"\n"+
-    "Quantidade: "+m.q+"\n"+
-    "Operador: "+((m.o||"-")+" ("+(m.u||"-")+")")+"\n"+
-    "Aparelho: "+(m.ap||"não informado")+"\n"+
-    (m.obs?"Observação: "+m.obs:""));
-   return;
-  }
   const tipo={pbiDia:"dia",pbiProd:"produto",pbiOp:"operador",pbiMov:"produto"}[b.dataset.a];
   if(!tipo)return;
   PBI.cruz=(PBI.cruz&&PBI.cruz.v===b.dataset.v)?null:{tipo,v:b.dataset.v};
@@ -1631,11 +1582,17 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  h+='<div id="opRel"></div>';
  h+='<div id="pbi"></div>';
  h+='<div id="rel"></div>';
+ h+='<div class="card"><h3>📥 Importar movimentações (Excel)</h3>'+
+ '<div class="mu">Entrada, baixa, ajuste ou contagem em lote. A importação de produtos (cadastro) continua em Dados.</div>'+
+ '<button type="button" class="btn" data-a="impX">📥 Importar movimentações (.xlsx/.csv)</button>'+
+ '<button type="button" class="btn ghost" data-a="impModelo">⬇ Baixar modelo (.xlsx)</button>'+
+ '<button type="button" class="btn ghost" data-a="impEstoque">⬇ Exportar estoque atual no formato do modelo</button>'+
+ '<div id="impRel"></div></div>';
  h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
  $("adm").innerHTML=h;
  $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
- drawRel();drawParados();drawOperadores();drawPbi();
+ drawRel();drawParados();drawOperadores();drawPbi();if(typeof impDrawRel==="function")impDrawRel();
  syncStatus()}
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
 $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
@@ -1643,6 +1600,10 @@ $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
  act(a,a==="cm"?i:+i)};
 async function act(a,i){
  if(!isA()&&a!=="av")return;
+ if(a==="impX")return document.getElementById("impMov").click();
+ if(a==="impModelo")return impModelo(false);
+ if(a==="impEstoque")return impModelo(true);
+ if(a==="impRejX")return impRejX();
  if(a==="ctListar"){apiContas("listar").then(j=>{
    const alvo=$("ctL");if(!alvo)return;
    if(!j.ok){alvo.innerHTML='<div class="mu">'+esc(j.erro||"Falhou")+'</div>';return}
@@ -1786,7 +1747,7 @@ $("qm").onclick=()=>{qty=Math.max(1,qty-1);$("qv").textContent=qty};$("qp").oncl
 $("go").onclick=()=>{initAudio();const v=$("man").value;$("man").value="";$("man").focus();last="";scan(v)};
 $("man").onkeydown=e=>{if(e.key==="Enter")$("go").onclick()};
 $("undo").onclick=()=>{
- const minha=[...M].filter(m=>vivo(m)&&m.u===cur.l&&!m.ap&&!m.est&&m.t!=="adj").pop();
+ const minha=[...M].filter(m=>vivo(m)&&m.u===cur.l&&!m.ap&&!m.est&&m.t!=="adj"&&!/^Importação Excel/.test(m.obs||"")).pop();
  if(!minha)return toast("Nenhuma bipada sua para desfazer.",true);
  if(!confirm("Desfazer a sua última bipada: "+TN[minha.t]+" de "+minha.q+" un. — "+nomeP(minha.c)+"?"))return;
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
@@ -2174,5 +2135,183 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.6.0 · 2026-02</div>
+</script>
+<script>
+/* ===== ETAPA 7 — Importação de movimentações via Excel (.xlsx/.csv) + modelo exportável ===== */
+/* Regra de ouro: a planilha NUNCA grava o saldo direto. Cada linha vira uma movimentação
+   (entrada, baixa ou ajuste) com id único, que entra na fila de sincronização e na auditoria.
+   "Sobrescrever o saldo" existe como tipo CONTAGEM: vira um AJUSTE só com a diferença. */
+/* IMP_INICIO */
+const IMP_CFG={
+ atomico:false,          /* true = com 1 erro, NADA é aplicado; false = aplica as linhas válidas */
+ duplicados:"rejeitar",  /* "rejeitar" (mantém a 1ª linha do SKU) | "somar" (junta mesmo SKU e tipo, exceto CONTAGEM) */
+ permitirNegativo:false, /* false = baixa/ajuste que deixaria saldo < 0 é rejeitado */
+ maxLinhas:2000
+};
+/* única fonte dos nomes: o modelo exportado e a leitura usam estas mesmas constantes */
+const IMP_COLS=["codigo_sku","quantidade","tipo_movimentacao","observacao"];
+const IMP_INFO=["descricao_informativo","cor_informativo","saldo_atual_informativo"];
+const IMP_TIPOS={entrada:"in",baixa:"out",saida:"out",ajuste:"adj",contagem:"cnt"};
+const IMP_ROT={in:"ENTRADA",out:"BAIXA",adj:"AJUSTE",cnt:"CONTAGEM"};
+const IMP_ABA="Importar";
+const impNorm=s=>String(s==null?"":s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase().replace(/[\s\-\.]+/g,"_");
+
+/* 1) Análise: valida tudo SEM mexer no estoque */
+function impAnalisar(R){
+ const r={itens:[],ok:[],rej:[],sem:[],brancas:0,exemplos:0,erro:""};
+ const hi=R.findIndex(l=>l.some(v=>String(v).trim()!==""));
+ if(hi<0){r.erro="A planilha está vazia.";return r}
+ const hd=R[hi].map(impNorm),col={};
+ IMP_COLS.forEach(n=>col[n]=hd.indexOf(n));
+ const falta=IMP_COLS.slice(0,3).filter(n=>col[n]<0);
+ if(falta.length){r.erro="Colunas obrigatórias ausentes: "+falta.join(", ")+". Use o modelo baixado no app.";return r}
+ const dados=R.slice(hi+1);
+ if(dados.length>IMP_CFG.maxLinhas){r.erro="A planilha tem "+dados.length+" linhas; o limite é "+IMP_CFG.maxLinhas+". Divida em partes.";return r}
+ const vistos={};
+ dados.forEach((l,k)=>{
+  const linha=hi+k+2,cel=n=>col[n]>=0&&l[col[n]]!=null?String(l[col[n]]).trim():"";
+  if(l.every(v=>String(v).trim()==="")){r.brancas++;return}
+  const sku=cel("codigo_sku"),tq=cel("quantidade"),tt=cel("tipo_movimentacao"),obs=cel("observacao");
+  if(/^exemplo/i.test(sku)){r.exemplos++;return}
+  const bruto=[sku,tq,tt,obs],rej=m=>r.rej.push({linha,sku,bruto,motivo:m});
+  const c=normCode(sku);
+  if(!c)return rej("codigo_sku vazio");
+  if(idx[c]==null)return rej("código não existe no cadastro");
+  const t=IMP_TIPOS[impNorm(tt)];
+  if(!t)return rej("tipo_movimentacao inválido (use ENTRADA, BAIXA, AJUSTE ou CONTAGEM)");
+  if(!/^-?\d+$/.test(tq))return rej("quantidade inválida (use inteiro, sem ponto ou vírgula)");
+  const q=parseInt(tq,10);
+  if((t==="in"||t==="out")&&q<=0)return rej("quantidade deve ser maior que zero");
+  if(t==="adj"&&q===0)return rej("AJUSTE não pode ser zero");
+  if(t==="cnt"&&q<0)return rej("CONTAGEM não pode ser negativa");
+  const ant=vistos[c];
+  if(ant){
+   if(IMP_CFG.duplicados==="somar"&&ant.t===t&&t!=="cnt"){
+    ant.q+=q;ant.linhas.push(linha);if(obs&&!ant.obs.includes(obs))ant.obs+=(ant.obs?" / ":"")+obs;return}
+   return rej("SKU repetido na planilha (já usado na linha "+ant.linhas[0]+")");
+  }
+  const it={c,t,q,obs,linhas:[linha],bruto};vistos[c]=it;r.itens.push(it);
+ });
+ /* 2ª passada: saldo simulado, na ordem da planilha */
+ const b=bal(),saldo={},atual=c=>saldo[c]!==undefined?saldo[c]:b[idx[c]];
+ r.itens.forEach(it=>{
+  const s=atual(it.c);
+  const d=it.t==="in"?it.q:it.t==="out"?-it.q:it.t==="adj"?it.q:it.q-s;
+  if(it.t!=="cnt"&&!IMP_CFG.permitirNegativo&&s+d<0){
+   r.rej.push({linha:it.linhas[0],sku:it.bruto[0],bruto:it.bruto,motivo:"deixaria o saldo negativo (saldo "+s+", movimento "+(d>0?"+":"")+d+")"});return}
+  if(d===0){r.sem.push(it);return}
+  saldo[it.c]=s+d;
+  r.ok.push({c:it.c,t:it.t==="out"?"out":it.t==="in"?"in":"adj",q:it.t==="out"?it.q:d,rot:IMP_ROT[it.t],
+   linhas:it.linhas,de:s,para:s+d,
+   obs:it.t==="cnt"?"Contagem via Excel (saldo "+s+" → "+(s+d)+")"+(it.obs?" · "+it.obs:""):it.obs});
+ });
+ r.rej.sort((a,b2)=>a.linha-b2.linha);
+ return r;
+}
+
+/* 2) Aplicação: tudo em memória e uma única gravação (efeito atômico no aparelho) */
+function impAplicar(an,arq){
+ const ap=aparelhoId(),base=Date.now();
+ an.ok.forEach((it,k)=>{
+  const m={id:uid(),t:it.t,c:it.c,q:it.q,o:cur.n,u:cur.l,ts:base+k,
+   obs:"Importação Excel "+arq+" · linha "+it.linhas.join("+")+(it.obs?" · "+it.obs:"")};
+  M.push(m);
+  if(!FILA.some(x=>x.id===m.id))FILA.push(Object.assign({},m,{aparelho:ap}));
+ });
+ sM();sF();syncStatus();
+ audit("IMPORTAÇÃO DE MOVIMENTAÇÕES",arq,an.ok.length+" aplicadas, "+an.rej.length+" rejeitadas");
+ return an.ok.length;
+}
+
+/* 3) Relatório do que entrou e do que foi rejeitado */
+let IMPREL=null;
+function impDrawRel(){
+ const el=$("impRel");if(!el)return;
+ if(!IMPREL){el.innerHTML='<div class="mu" style="margin-top:8px">Nenhuma importação feita nesta sessão.</div>';return}
+ const r=IMPREL;
+ el.innerHTML='<div class="mu" style="margin-top:8px">'+esc(r.arq)+' · '+fmt(r.ts)+'</div>'+
+  '<div class="sum"><div><b>'+r.aplicadas+'</b><span class="mu">aplicadas</span></div><div><b>'+r.rej.length+'</b><span class="mu">rejeitadas</span></div><div><b>'+r.sem+'</b><span class="mu">sem alteração</span></div></div>'+
+  (r.bloq?'<div class="neg"><b>Modo atômico: houve erros, então nada foi aplicado.</b></div>':'')+
+  '<div class="mu">Em branco ignoradas: '+r.brancas+' · exemplos ignorados: '+r.exemplos+'</div>'+
+  r.rej.slice(0,30).map(x=>'<div class="item"><span><b>Linha '+x.linha+' · '+esc(x.sku||"(vazio)")+'</b><span class="mu">'+esc(x.motivo)+'</span></span></div>').join("")+
+  (r.rej.length>30?'<div class="mu">Mostrando 30 de '+r.rej.length+'. Baixe a lista completa.</div>':'')+
+  (r.rej.length?'<button type="button" class="btn ghost" data-a="impRejX">⬇ Baixar rejeitadas (.xlsx, pronto para corrigir e reimportar)</button>':'');
+}
+
+/* 4) Entrada do arquivo */
+const impInput=document.createElement("input");
+impInput.type="file";impInput.accept=".xlsx,.xls,.csv";impInput.hidden=true;impInput.id="impMov";
+document.body.appendChild(impInput);
+impInput.onchange=async e=>{
+ const f=e.target.files[0];e.target.value="";if(!f)return;
+ if(!isA())return toast("Só o administrador importa movimentações.",true);
+ try{await loadLib("xl")}catch(x){return alert("Leitor de planilha não carregou. Verifique a internet e tente de novo.")}
+ let R;
+ try{
+  const wb=XLSX.read(await f.arrayBuffer(),{type:"array",cellText:true});
+  const ws=wb.Sheets[IMP_ABA]||wb.Sheets[wb.SheetNames[0]];
+  R=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false});
+ }catch(x){return alert("Não consegui ler a planilha.")}
+ const an=impAnalisar(R);
+ if(an.erro)return alert(an.erro);
+ const bloq=IMP_CFG.atomico&&an.rej.length>0;
+ let aplicadas=0;
+ if(an.ok.length&&!bloq){
+  const n={ENTRADA:0,BAIXA:0,AJUSTE:0,CONTAGEM:0};an.ok.forEach(x=>n[x.rot]++);
+  if(!confirm("Importar "+f.name+"?\n\n✔ "+an.ok.length+" linha(s) válida(s): "+n.ENTRADA+" entrada(s), "+n.BAIXA+" baixa(s), "+n.AJUSTE+" ajuste(s), "+n.CONTAGEM+" contagem(ns)\n✖ "+an.rej.length+" rejeitada(s)\n= "+an.sem.length+" sem alteração\n\nModo: "+(IMP_CFG.atomico?"tudo ou nada":"aplica as válidas")+"."))return;
+  aplicadas=impAplicar(an,f.name);
+ }
+ IMPREL={arq:f.name,ts:Date.now(),aplicadas,rej:an.rej,sem:an.sem.length,brancas:an.brancas,exemplos:an.exemplos,bloq};
+ draw();
+ toast(aplicadas+" movimentação(ões) importada(s), "+an.rej.length+" rejeitada(s).",!aplicadas&&an.rej.length>0);
+};
+
+/* 5) Modelo e exportações (.xlsx) */
+function impXLSX(nome,abas){
+ const wb=XLSX.utils.book_new();
+ abas.forEach(([n,aoa,larg])=>{
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  if(larg)ws["!cols"]=larg.map(w=>({wch:w}));
+  if(n===IMP_ABA)Object.keys(ws).forEach(k=>{if(/^A\d+$/.test(k)&&ws[k].t==="s")ws[k].z="@"});  /* SKU como texto: não perde zeros */
+  XLSX.utils.book_append_sheet(wb,ws,n);
+ });
+ const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+ const url=URL.createObjectURL(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+ const a=document.createElement("a");a.href=url;a.download=nome;document.body.appendChild(a);a.click();
+ setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},200);
+}
+const IMP_INSTR=[["INSTRUÇÕES — Importação de movimentações MDO Estoque"],[""],
+ ["1. Preencha a aba 'Importar'. Não mude os nomes das colunas."],
+ ["2. codigo_sku: código do produto, exatamente como no cadastro (formato texto)."],
+ ["3. quantidade: número inteiro, sem ponto nem vírgula."],
+ ["4. tipo_movimentacao: ENTRADA (soma), BAIXA (subtrai), AJUSTE (soma com sinal, aceita negativo) ou CONTAGEM (define o saldo final)."],
+ ["5. observacao: texto livre (opcional)."],
+ ["6. Linhas com SKU 'EXEMPLO...' são ignoradas. Apague as de exemplo se quiser."],
+ ["7. Linha com erro é rejeitada e listada no relatório; as válidas seguem (modo padrão)."],
+ ["8. Colunas terminadas em _informativo são só para consulta e são ignoradas."]];
+async function impModelo(comEstoque){
+ try{await loadLib("xl")}catch(x){return alert("Leitor de planilha não carregou. Verifique a internet.")}
+ let aoa;
+ if(comEstoque){
+  const b=bal();
+  aoa=[IMP_COLS.concat(IMP_INFO)].concat(PP.map((p,i)=>[String(p[0]),b[i],"CONTAGEM","",p[1],p[2],b[i]]));
+ }else aoa=[IMP_COLS,
+  ["EXEMPLO-1",10,"ENTRADA","Exemplo: chegada de lote, NF 1234"],
+  ["EXEMPLO-2",2,"BAIXA","Exemplo: venda"],
+  ["EXEMPLO-3",-1,"AJUSTE","Exemplo: peça danificada"],
+  ["EXEMPLO-4",25,"CONTAGEM","Exemplo: saldo contado na prateleira"]];
+ const hoje=new Date().toISOString().slice(0,10);
+ impXLSX(comEstoque?"estoque_atual_modelo_"+hoje+".xlsx":"modelo_importacao_mdo.xlsx",
+  [[IMP_ABA,aoa,[18,12,20,38,40,14,14]],["Instruções",IMP_INSTR,[110]]]);
+ audit("EXPORTAÇÃO",comEstoque?"estoque no formato do modelo":"modelo de importação",comEstoque?PP.length+" linhas":"");
+}
+async function impRejX(){
+ if(!IMPREL||!IMPREL.rej.length)return;
+ try{await loadLib("xl")}catch(x){return alert("Leitor de planilha não carregou.")}
+ impXLSX("rejeitadas_"+new Date().toISOString().slice(0,10)+".xlsx",
+  [[IMP_ABA,[IMP_COLS.concat(["motivo_rejeicao","linha_original"])].concat(IMPREL.rej.map(x=>x.bruto.concat([x.motivo,x.linha]))),[18,12,20,38,60,14]]]);
+}
+/* IMP_FIM */
+try{impDrawRel()}catch(e){}
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.7.0 · 2026-11</div>
 </body></html>
