@@ -129,7 +129,11 @@ function makeEnv(opts = {}) {
     },
     createImageBitmap: async (f) => ({ width: 1200, height: 800, close() {}, _file: f }),
     Math, Date, JSON, Promise, Map, Set, parseInt, parseFloat, isFinite, Number, String, Object, Array, TextEncoder,
-    crypto: require("crypto").webcrypto,
+    /* Sem `crypto.subtle`, o site não é HTTPS: o app precisa cair no hash alternativo.
+       Simulamos exatamente isso para o caminho de reserva ser testado aqui também. */
+    crypto: process.env.MDO_SEM_SUBTLE
+      ? { getRandomValues: (a) => require("crypto").webcrypto.getRandomValues(a) }
+      : require("crypto").webcrypto,
     confirm: (m) => { log.confirms = (log.confirms || []).concat(m); return respostas.confirm; },
     prompt: (m, d) => { log.prompts = (log.prompts || []).concat(m); return respostas.prompt.length ? respostas.prompt.shift() : d; },
     alert: (m) => log.alerts.push(String(m)),

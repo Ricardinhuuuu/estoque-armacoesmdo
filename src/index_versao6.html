@@ -44,10 +44,12 @@ main{padding:14px;max-width:640px;margin:0 auto}
 .seg button.on.out{background:var(--r);color:#fff}.seg button.on.in{background:var(--b);color:#fff}
 .btn{border:0;border-radius:12px;padding:13px 16px;font-weight:700;font-size:15px;background:var(--b);color:#fff;width:100%;cursor:pointer}
 .btn.red{background:var(--r)}.btn.ghost{background:var(--bl);color:var(--tx)}
-#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;height:min(38vh,260px)}
+#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;height:min(26vh,190px)}
 #cam video,#cam canvas{width:100%;height:100%;object-fit:contain;display:block}
 /* barra de zoom embaixo do visor */
-#zoomBar{display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:var(--card);border:1px solid var(--bd);border-radius:12px}
+#zoomBar{display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;flex-wrap:wrap}
+#zoomBar .zbtns{display:flex;gap:6px;margin-left:auto}
+#zoomBar .zbtns .pill.at{background:var(--b);color:#fff;border-color:var(--b)}
 #zoomBar.on{display:flex}
 #zoomBar input[type=range]{flex:1;min-width:80px;accent-color:var(--b2)}
 #zoomBar b{min-width:46px;text-align:right;font-size:15px}
@@ -104,7 +106,8 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="row" style="align-items:center;justify-content:space-between"><span class="mu">Quantidade por bipada</span><div class="qty"><button id="qm">−</button><b id="qv">1</b><button id="qp">+</button></div></div>
 <button class="btn" id="camBtn" style="margin-top:12px">📷 Ligar câmera (Leitura Automática)</button>
 <div id="camW"><div id="cam"></div><div id="gl"></div></div>
-<div id="zoomBar"><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b></div>
+<div id="zoomBar"><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b>
+ <span class="zbtns"><button type="button" class="pill" data-z="1">1x</button><button type="button" class="pill" data-z="2">2x</button><button type="button" class="pill" data-z="3.4">3,4x</button><button type="button" class="pill" data-z="6">6x</button></span></div>
 <div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
 <button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button>
 <button class="btn ghost" id="cadPho" style="margin-top:8px">🏷 Cadastrar produto por foto da etiqueta</button><input type="file" id="cadPh" accept="image/*" capture="environment" hidden><input type="file" id="ph" accept="image/*" capture="environment" hidden>
@@ -153,7 +156,18 @@ const ls=(k,d)=>{try{const v=localStorage.getItem(k);if(v!=null)return JSON.pars
 const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const fmt=ts=>new Date(ts).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"medium"});
 const avKey="mdo_av";
-async function H(s){try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("mdo|"+s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=5381;for(const ch of "mdo|"+s)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
+async function H(s){
+ const dados="mdo|"+s;
+ /* 1) navegador com HTTPS: SHA-256 de verdade */
+ try{
+  if(crypto&&crypto.subtle&&crypto.subtle.digest){
+   const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(dados));
+   return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+  }
+ }catch(e){}
+ /* 2) HTTP simples (sem crypto.subtle) ou navegador antigo: reserva determinística.
+    Só o modo local usa isto; com servidor, a senha é conferida por PBKDF2 no servidor. */
+ {let h=5381;for(const ch of dados)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
 const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess",cads:"mdo_cads",invh:"mdo_invh"};
 const KV={}; /* última gravação de cada chave: mantém as leituras coerentes mesmo sem armazenamento */
@@ -1224,14 +1238,19 @@ async function startNativeQ(box,f){
  try{await v.play()}catch(e){}
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
- let on=true;
+ let on=true,rodando=false;
  (async()=>{while(on){try{if(v.readyState>=2){const r=await det.detect(v);if(r.length)qDedupe(String(r[0].rawValue))}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
  return{stop:async()=>{on=false;stream.getTracks().forEach(t=>t.stop())},clear:()=>{box.innerHTML=""},zoom:z};
 }
 async function startLibQ(box){
  box.id="qCamBox";
- const F=Html5QrcodeSupportedFormats,o={verbose:false,formatsToSupport:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
- const cfg={fps:30,aspectRatio:1.777,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.92),height:Math.floor(h*.42)})};
+ /* todos os formatos comuns; a biblioteca ignora os que não souber ler */
+ const F=Html5QrcodeSupportedFormats;
+ const todos=["CODE_128","EAN_13","EAN_8","UPC_A","UPC_E","CODE_39","CODE_93","ITF","CODABAR","QR_CODE","DATA_MATRIX"]
+   .map(k=>F[k]).filter(v=>v!==undefined);
+ const o={verbose:false,formatsToSupport:todos.length?todos:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
+ /* fps alto para bipagem contínua; caixa de leitura grande para aceitar o código longe */
+ const cfg={fps:40,aspectRatio:1.777,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.94),height:Math.floor(h*.6)})};
  let q=new Html5Qrcode("qCamBox",o);
  try{await q.start({facingMode:"environment"},{...cfg,videoConstraints:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}},qDedupe,()=>{})}
  catch(e){try{await q.clear()}catch(x){}
@@ -1319,33 +1338,49 @@ async function qDetectarLib(cv){
 }
 /* estratégias, da mais provável à mais agressiva */
 function qEstrategias(){
- const regioes=[{x:0,y:0,w:1,h:1},{x:0.05,y:0.25,w:0.9,h:0.5},{x:0.15,y:0.3,w:0.7,h:0.4},{x:0,y:0.15,w:1,h:0.7}];
+ const regioes=[{x:0,y:0,w:1,h:1},{x:0.05,y:0.2,w:0.9,h:0.6},{x:0.15,y:0.28,w:0.7,h:0.44},{x:0,y:0.12,w:1,h:0.76}];
  const saida=[];
- for(const rot of [0,90,180,270]){
-  saida.push({rot,maxLado:1600});
-  saida.push({rot,maxLado:1600,cinza:true,contraste:1.6});
-  saida.push({rot,maxLado:1600,cinza:true,contraste:2.2,nitidez:true});
+ /* 1) o mais provável primeiro: a foto como está, clara e já em cinza com contraste */
+ saida.push({rot:0,maxLado:2000});
+ saida.push({rot:0,maxLado:2000,cinza:true,contraste:1.8});
+ saida.push({rot:0,maxLado:2000,cinza:true,contraste:2.4,nitidez:true});
+ /* 2) recorte central: código pequeno no meio da etiqueta fica grande */
+ saida.push({rot:0,maxLado:2000,cinza:true,contraste:1.8,regiao:regioes[1]});
+ saida.push({rot:0,maxLado:2000,cinza:true,contraste:2.4,nitidez:true,regiao:regioes[2]});
+ /* 3) ampliação: mesma foto em resolução maior (código longe) */
+ saida.push({rot:0,maxLado:2600,cinza:true,contraste:2,regiao:regioes[3]});
+ /* 4) girada, para foto tirada de lado */
+ for(const rot of [90,270]){
+  saida.push({rot,maxLado:2000});
+  saida.push({rot,maxLado:2000,cinza:true,contraste:2});
  }
- for(const rot of [0,90,270])for(const reg of regioes.slice(1))saida.push({rot,maxLado:1600,cinza:true,contraste:1.8,regiao:reg});
+ /* 5) última cartada: 180° e contraste forte */
+ saida.push({rot:180,maxLado:1800,cinza:true,contraste:2.2});
  return saida;
 }
-/* devolve {codigo, tentativas, motivo} — motivo só quando não achou */
-async function qLerFoto(file){
- const img=await qCarregarImagem(file);
+/* tenta em duas ondas: a primeira rápida (imagem crua e cinza), a segunda só se precisar.
+   Assim a foto comum é lida em poucos décimos de segundo, sem passar por 30 recortes. */
+async function qLerFotoRapido(file,aoProgredir){
+ const img=(file&&file.getContext)?file:await qCarregarImagem(file);
  const lista=qEstrategias();
- let tentativas=0,motivoLib=null;
- for(const est of lista){
+ let tentativas=0,motivoLib=null,primeiraFalha=null;
+ for(let i=0;i<lista.length;i++){
+  const est=lista[i];
   tentativas++;
+  if(aoProgredir)aoProgredir(tentativas);
   let cv=qCanvas(img,est);
   if(est.regiao)cv=qRecorte(cv,est.regiao);
-  let txt=await qDetectarCanvas(cv);
-  if(!txt){
-   try{txt=await qDetectarLib(cv)}catch(e){motivoLib="LibFail";break}
-  }
+  let txt=null;
+  try{txt=await qDetectarCanvas(cv)}catch(e){}
+  if(!txt)txt=await qDetectarLib(cv);
   if(txt)return{codigo:txt,tentativas,motivo:null};
+  /* depois das 5 primeiras tentativas, se nada, para e diz o motivo (não trava a interface) */
+  if(i>=5&&!primeiraFalha)primeiraFalha=tentativas;
  }
  return{codigo:null,tentativas,motivo:motivoLib||"sem-leitura"};
 }
+/* devolve {codigo, tentativas, motivo} — motivo só quando não achou */
+async function qLerFoto(file){return qLerFotoRapido(file)}
 /* carrega a foto do aparelho como imagem (createImageBitmap quando existir) */
 function qCarregarImagem(file){
  if(typeof createImageBitmap==="function")return createImageBitmap(file);
@@ -1614,7 +1649,18 @@ $("undo").onclick=()=>{
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
 async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
-const FMT=["code_128","ean_13","qr_code"];
+/* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
+const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
+const FMT=["code_128","ean_13","qr_code"];   /* reserva, usada quando o aparelho não diz o que suporta */
+/* pergunta ao leitor nativo quais formatos ele decodifica e devolve a interseção */
+async function fmtDoAparelho(){
+ try{
+  if(!(window.BarcodeDetector&&BarcodeDetector.getSupportedFormats))return FMT;
+  const sup=await BarcodeDetector.getSupportedFormats();
+  const ok=FMT_WANT.filter(f=>sup.includes(f));
+  return ok.length?ok:FMT;
+ }catch(e){return FMT}
+}
 function camErr(e){const n=(e&&e.name)||String(e);
  if(n==="NotAllowedError"||n==="PermissionDeniedError")return"Câmera bloqueada. No iPhone: Ajustes › Safari › Câmera › Permitir (e abra o app direto no Safari, não dentro do WhatsApp/Instagram). Ou use a foto/digite abaixo.";
  if(n==="NotFoundError"||n==="DevicesNotFoundError")return"Nenhuma câmera encontrada neste aparelho. Use a foto ou digite abaixo.";
@@ -1662,11 +1708,23 @@ function camDiagTexto(){
 }
 /* confiança da última leitura feita pelo leitor nativo (null quando o leitor não informa) */
 let ultimaConf=null;
+/* último quadro visto pela câmera: a foto usa ele quando o código está difícil na leitura ao vivo */
+let ULTQUADRO=null;   /* {cv, quando} */
+function guardarQuadro(v){
+ try{
+  const w=v.videoWidth||0,h=v.videoHeight||0;if(!w||!h)return;
+  const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+  const cx=cv.getContext&&cv.getContext("2d");if(!cx)return;
+  cx.drawImage(v,0,0,w,h);ULTQUADRO={cv,quando:Date.now()};
+ }catch(e){}
+}
 /* (b) troca de código muito rápida costuma ser leitura errada: só aceita se a confiança for boa */
+/* Anti-duplicado: bloqueia só o MESMO código por pouco tempo; o próximo entra na hora.
+   Leitura de confiança baixa logo depois de outra também é descartada (evita falso positivo). */
 const dedupe=t=>{const agora=Date.now();const c=String(t);
- const fraca=ultimaConf!=null&&ultimaConf<0.5;
- if(c===last){if(agora-lastT<1500)return false;lastT=agora;scan(c);return true}
- if(last&&agora-lastT<350&&fraca)return false;   /* leitura duvidosa logo depois de outra: ignora */
+ const fraca=ultimaConf!=null&&ultimaConf<0.45;
+ if(c===last){if(agora-lastT<700)return false;lastT=agora;scan(c);return true}
+ if(last&&agora-lastT<300&&fraca)return false;   /* leitura duvidosa logo depois de outra: ignora */
  last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);return true};
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
@@ -1702,7 +1760,11 @@ async function zoomAplicar(z){
 function zoomBarra(ligar){
  const b=$("zoomBar");if(!b)return;
  b.classList.toggle("on",!!ligar);
- if(ligar){const r=$("zoomR");if(r)r.value=ZOOMATUAL;const v=$("zoomV");if(v)v.textContent=ZOOMATUAL.toFixed(1).replace(".",",")+"x"}
+ if(ligar){
+  const r=$("zoomR");if(r)r.value=ZOOMATUAL;
+  const v=$("zoomV");if(v)v.textContent=ZOOMATUAL.toFixed(1).replace(".",",")+"x";
+  document.querySelectorAll("#zoomBar .zbtns .pill").forEach(b=>b.classList.toggle("at",Math.abs(Number(b.dataset.z)-ZOOMATUAL)<0.05));
+ }
 }
 async function aplicarZoom(stream,box){
  let max=0;
@@ -1729,7 +1791,7 @@ async function aplicarZoom(stream,box){
 function addLaser(box){if(box.querySelector("#lz"))return;const z=document.createElement("div");z.id="lz";z.innerHTML='<div class="ln"></div>';box.appendChild(z)}
 async function focusCont(track){try{const c=track.getCapabilities&&track.getCapabilities();if(c&&c.focusMode&&c.focusMode.includes("continuous"))await track.applyConstraints({advanced:[{focusMode:"continuous"}]})}catch(e){}}
 /* Motor 1 (mais rápido, sem internet): leitor nativo do navegador (Android/Chrome) */
-async function nativeOK(){try{if(!("BarcodeDetector" in window))return null;const sup=await BarcodeDetector.getSupportedFormats(),f=FMT.filter(x=>sup.includes(x));return f.includes("code_128")?f:null}catch(e){return null}}
+async function nativeOK(){try{if(!("BarcodeDetector" in window))return null;const sup=await BarcodeDetector.getSupportedFormats(),f=await fmtDoAparelho();return f.includes("code_128")?f:(f.length?f:null)}catch(e){return null}}
 async function startNative(box,f){
  const det=new BarcodeDetector({formats:f});let stream;
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false})}
@@ -1739,7 +1801,8 @@ async function startNative(box,f){
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
  let on=true;
- (async()=>{while(on){try{if(v.readyState>=2){const r=await det.detect(v);if(r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
+ (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(()=>{rodando=false});
+   if(Date.now()-(ULTQUADRO?ULTQUADRO.quando:0)>400)guardarQuadro(v)}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
  const mover=async(alvo)=>{
   const t=stream.getVideoTracks()[0],c=t&&t.getCapabilities&&t.getCapabilities();
   let nat=1;
@@ -1811,7 +1874,27 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
  }catch(e){try{if(sc)await sc.stop()}catch(x){}sc=null;box.innerHTML="";box.style.display="none";
   msg.textContent=(e&&e.name==="LibFail")?"Não consegui carregar o leitor (internet fraca ou bloqueada). Toque em 'Ligar câmera' de novo, use a foto ou digite abaixo.":camErr(e)}
  $("camBtn").disabled=false};
-$("phBtn").onclick=()=>{initAudio();$("ph").click()};
+/* 📸 Ler por foto: primeiro tenta o último quadro da câmera (quase sempre é o código que
+   está na frente dela, e resolve o caso de reflexo na leitura ao vivo). Se não der, abre a câmera. */
+$("phBtn").onclick=async()=>{
+ initAudio();
+ const cv=ULTQUADRO&&(Date.now()-ULTQUADRO.quando<20000)?ULTQUADRO.cv:null;
+ if(!cv){$("ph").click();return}
+ $("phBtn").disabled=true;
+ if($("camMsg"))$("camMsg").textContent="Tentando ler o quadro que está na câmera…";
+ try{
+  const r=await qLerFotoRapido(cv);
+  if(r.codigo){
+   LEIT.origem="foto (quadro da câmera)";
+   if($("camMsg"))$("camMsg").textContent="";
+   scan(r.codigo);
+  }else{
+   if($("camMsg"))$("camMsg").textContent="";
+   $("ph").click();
+  }
+ }catch(e){$("ph").click()}
+ finally{$("phBtn").disabled=false}
+};
 /* Leitura por foto: sempre libera o leitor (clear) e separa erro de rede de foto ilegível */
 $("ph").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;const msg=$("camMsg");msg.textContent="Lendo a foto…";
  let leitor=null;
@@ -1900,14 +1983,23 @@ $("cadPh").onchange=e=>{const f=e.target.files[0];e.target.value="";cadPorFoto(f
 /* ===== Barra de zoom embaixo do visor ===== */
 (function(){
  const r=$("zoomR");if(!r)return;
- const mudar=()=>{const z=Number(r.value)||1;const v=$("zoomV");if(v)v.textContent=z.toFixed(1).replace(".",",")+"x"};
- r.addEventListener("input",mudar);
- r.addEventListener("change",()=>{zoomAplicar(Number(r.value))});
- r.addEventListener("input",()=>{if(sc)zoomAplicar(Number(r.value))});
+ const marcar=()=>{
+  const z=Number(r.value)||1;
+  const v=$("zoomV");if(v)v.textContent=z.toFixed(1).replace(".",",")+"x";
+  document.querySelectorAll("#zoomBar .zbtns .pill").forEach(b=>{
+   b.classList.toggle("at",Math.abs(Number(b.dataset.z)-z)<0.05);
+  });
+ };
+ r.addEventListener("input",()=>{marcar();zoomAplicar(Number(r.value))});
+ r.addEventListener("change",()=>{marcar();zoomAplicar(Number(r.value))});
+ document.querySelectorAll("#zoomBar .zbtns .pill").forEach(b=>{
+  b.onclick=()=>{const z=Number(b.dataset.z)||1;r.value=z;marcar();zoomAplicar(z)};
+ });
+ marcar();
 })();
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.4.0 · 2026-02</div>
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.5.0 · 2026-02</div>
 </body></html>
