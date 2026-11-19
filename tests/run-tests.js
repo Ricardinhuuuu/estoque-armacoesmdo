@@ -1393,6 +1393,37 @@ t("10.3 operador não vê o cartão de produtos parados", () =>
     eq(r.html, "", "operador não pode ver o cartão:");
   }));
 
+/* ================= ETAPA 6.1 — CÂMERA: ZOOM COMPLETO E DIAGNÓSTICO ================= */
+g("Etapa 6.1 — câmera: zoom, dedupe e diagnóstico");
+t("6.1 zoom de câmera menor que 3,4x é completado pela ampliação digital", () => {
+  const src = fs.readFileSync(HTML, "utf8");
+  okv(src.includes("digitalFalta"), "o zoom precisa calcular o complemento digital");
+  okv(/max>=ZOOM\)\?"":\("scale/.test(src) || src.includes('(zNativo&&max>=ZOOM)?"":'), "com zoom nativo suficiente não aplica transform");
+});
+t("6.1 diagnóstico da câmera fica salvo no aparelho e é legível", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{
+      CAMDIAG.leitor="nativo";CAMDIAG.zoomMax=2;CAMDIAG.digital=1.7;CAMDIAG.lidas=5;CAMDIAG.falhas=1;
+      camDiagSalvar();
+      const salvo=JSON.parse(localStorage.getItem("mdo_camdiag"));
+      return {salvo, texto:camDiagTexto()};
+    })()`);
+    eq(r.salvo.leitor, "nativo", "leitor salvo:");
+    eq(r.salvo.lidas, 5, "leituras salvas:");
+    okv(r.texto.includes("2.0x"), "o texto precisa mostrar o zoom do aparelho: " + r.texto);
+    okv(r.texto.includes("leituras: 5"), "o texto precisa mostrar as leituras: " + r.texto);
+  }));
+t("6.1 diagnóstico vazio diz a verdade, sem inventar dado", () =>
+  adminPronto(novo()).then((env) => {
+    const r = run(env, `(()=>{localStorage.removeItem("mdo_camdiag");return camDiagTexto();})()`);
+    okv(r.includes("ainda não foi usada"), "sem uso, precisa dizer que não foi usada: " + r);
+  }));
+t("6.1 leitura duvidosa logo após outra não troca o código", () => {
+  const src = fs.readFileSync(HTML, "utf8");
+  okv(src.includes("ultimaConf"), "o app precisa considerar a confiança da leitura");
+  okv(src.includes("fraca"), "leitura de baixa confiança precisa ser tratada");
+});
+
 (async () => {
   await Promise.all(pendentes);
   console.log(resultados.join("\n"));
