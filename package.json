@@ -1,9 +1,11 @@
 {
   "name": "mdo-estoque",
   "private": true,
-  "version": "6.4.0",
+  "version": "6.5.0",
   "description": "MDO Estoque — controle de armações com bipagem, câmera e sincronização na Vercel",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node tests/run-tests.js"
   },
