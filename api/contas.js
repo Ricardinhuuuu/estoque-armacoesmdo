@@ -168,6 +168,25 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    /* ---------- cadastrar (autocadastro na tela de início, sem e-mail) ---------- */
+    if (acao === "cadastrar") {
+      const login = C.normLogin(corpo.login);
+      const nome = String(corpo.nome || "").trim();
+      const senha = String(corpo.senha || "");
+      if (!C.nomeOK(nome)) { res.status(400).json({ ok: false, erro: "Digite nome e sobrenome" }); return; }
+      if (!C.loginOK(login)) { res.status(400).json({ ok: false, erro: "Escolha um login sem espaços, de 3 a 40 caracteres." }); return; }
+      if (!C.senhaForte(senha)) { res.status(400).json({ ok: false, erro: "A senha precisa ter pelo menos 6 caracteres." }); return; }
+      if (await buscarUsuario(db, login)) { res.status(409).json({ ok: false, erro: "Este login já está em uso. Escolha outro." }); return; }
+      const h = C.criarHashSenha(senha);
+      /* o autocadastro cria sempre operador, nunca administrador */
+      const u = { l: login, n: nome, r: "operador", hash: h.hash, sal: h.sal, iteracoes: h.iteracoes, t: 0, st: "ativo", temp: false, ts: agora };
+      await salvarUsuario(db, u);
+      const tk = await abrirSessao(db, login);
+      res.status(200).json({ ok: true, sessao: tk, usuario: C.usuarioPublico(u), criado: true,
+        aviso: "Novo operador cadastrado: " + nome + " (" + login + ")" });
+      return;
+    }
+
     /* ---------- trocarSenha (não exige sessão de admin: é a troca obrigatória) ---------- */
     if (acao === "trocarSenha") {
       const login = C.normLogin(corpo.login);
