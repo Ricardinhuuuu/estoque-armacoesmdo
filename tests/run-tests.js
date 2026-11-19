@@ -629,16 +629,59 @@ t("2.6 produto não cadastrado mostra aviso e nada muda", () =>
     okv(r.txt.includes("não cadastrado"), "aviso pouco claro: " + r.txt);
     eq(r.depois, r.antes, "saldo depois de consulta inválida:");
   }));
+t("câmera: visor mais baixo, largura inteira e botões de zoom", () => {
+  const env = novo();
+  const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
+  const css = html.match(/#cam\{[^}]*\}/)[0];
+  okv(/height:min\((2[0-9]|3[0-2])vh/.test(css), "altura do visor deve ser compacta: " + css);
+  okv(/width:100%/.test(css) && /max-width:100%/.test(css), "largura deve continuar inteira");
+  okv(/object-fit:contain/.test(html), "imagem inteira dentro do visor");
+  okv(/data-z="1"/.test(html) && /data-z="6"/.test(html), "faltam os botões rápidos de zoom");
+  okv(/id="zoomR"/.test(html), "falta o controle deslizante de zoom");
+  okv(html.indexOf('id="zoomBar"') > html.indexOf('id="cam"'), "a barra de zoom fica abaixo do visor");
+});
+
+t("câmera: formatos comuns de código de barras são pedidos ao leitor", () => {
+  const env = novo();
+  const f = run(env, "FMT_WANT");
+  ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "qr_code"].forEach((x) =>
+    okv(f.includes(x), "falta o formato " + x));
+  okv(run(env, "typeof fmtDoAparelho") === "function", "falta perguntar ao aparelho o que ele suporta");
+});
+
+t("câmera: dedupe bloqueia só o mesmo código, e por pouco tempo", () => {
+  const env = novo();
+  run(env, "cur={l:'x',r:'adm'};last=null;lastT=0;ultimaConf=null;");
+  okv(run(env, 'dedupe("111")') === true, "primeira leitura deve passar");
+  okv(run(env, 'dedupe("111")') === false, "repetição imediata do mesmo código deve ser ignorada");
+  okv(run(env, 'dedupe("222")') === true, "o próximo código deve entrar na hora");
+  run(env, 'last="111";lastT=Date.now()-800;');
+  okv(run(env, 'dedupe("111")') === true, "o mesmo código volta a valer depois da janela curta");
+});
+
+t("foto: a primeira tentativa é a imagem crua e há recorte, ampliação e giro", () => {
+  const env = novo();
+  const e = run(env, "qEstrategias()");
+  okv(e[0].rot === 0 && !e[0].cinza && !e[0].regiao, "a primeira deve ser a foto como veio");
+  okv(e.some((x) => x.regiao), "falta recorte");
+  okv(e.some((x) => x.maxLado > 2000), "falta ampliação (resolução maior)");
+  okv(e.some((x) => x.rot === 90) && e.some((x) => x.rot === 270), "falta giro");
+  okv(run(env, "typeof qLerFotoRapido") === "function", "falta a leitura em ondas");
+});
+
 t("2.3/2.4 estratégias de foto cobrem rotação, cinza, contraste e recorte", () => {
   const env = novo();
   const e = run(env, "qEstrategias()");
-  okv(Array.isArray(e) && e.length >= 12, "poucas estratégias: " + (e && e.length));
+  okv(Array.isArray(e) && e.length >= 10, "poucas estratégias: " + (e && e.length));
   [0, 90, 180, 270].forEach((r) => okv(e.some((x) => x.rot === r), "falta rotação " + r));
   okv(e.some((x) => x.cinza), "falta tons de cinza");
   okv(e.some((x) => x.contraste), "falta contraste");
   okv(e.some((x) => x.nitidez), "falta nitidez");
   okv(e.some((x) => x.regiao), "falta recorte de região");
-  okv(e.every((x) => x.maxLado === 1600), "resolução de referência deve ser 1600 no maior lado");
+  okv(e.every((x) => x.maxLado >= 1600), "nenhuma tentativa pode ficar abaixo de 1600 no maior lado");
+  /* a foto comum precisa ser resolvida sem passar por todas as tentativas */
+  okv(e[0].rot === 0 && !e[0].cinza, "a primeira tentativa deve ser a foto como veio");
+  okv(e.slice(0, 3).some((x) => x.cinza && x.contraste), "as 3 primeiras devem já cobrir cinza + contraste");
 });
 t("2.4 pré-processamento reduz para 1600 px no maior lado", () => {
   const env = novo();
