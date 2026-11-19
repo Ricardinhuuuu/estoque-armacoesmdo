@@ -50,6 +50,16 @@ main{padding:14px;max-width:640px;margin:0 auto}
 #zoomBar{display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;flex-wrap:wrap}
 #zoomBar .zbtns{display:flex;gap:6px;margin-left:auto}
 #zoomBar .zbtns .pill.at{background:var(--b);color:#fff;border-color:var(--b)}
+/* Relatório (Power BI): uma coluna no celular, grade no computador */
+#pbi .pbiGrade{display:block}
+@media(min-width:760px){
+ #pbi .pbiGrade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+ #pbi .pbiGrade>.card{margin:0}
+ #pbi .pbiGrade>.pbiLargo{grid-column:1/-1}
+}
+#pbiFiltros summary{cursor:pointer;font-weight:600;padding:4px 0}
+@media(min-width:760px){#pbiFiltros summary{display:none}}
+#pbi .item[title]{cursor:pointer}
 #zoomBar.on{display:flex}
 #zoomBar input[type=range]{flex:1;min-width:80px;accent-color:var(--b2)}
 #zoomBar b{min-width:46px;text-align:right;font-size:15px}
@@ -526,6 +536,7 @@ function drawBusca(){
   :BUSCA.carregando?'<div class="mu">Carregando…</div>'
   :(BUSCA.itens&&!BUSCA.itens.length)?'<div class="mu">Nenhum produto encontrado no servidor para “'+esc(BUSCA.termo||"")+'”.</div>'
   :(BUSCA.itens?BUSCA.itens.map(p=>'<div class="item"><span><b>'+esc(p.descricao)+'</b><span class="mu">'+esc(p.cor)+' · '+esc(p.codigo)+'</span></span></div>').join(""):"");
+ h+='</div>';
  el.innerHTML=h;
  const g=$("buscG");if(g)g.onclick=()=>buscaServidor(String($("q").value||""),0);
  const a=$("buscA");if(a)a.onclick=()=>buscaServidor(BUSCA.termo,BUSCA.pagina-2);
@@ -914,10 +925,27 @@ function alertas(){
 /* lista dos alertas ainda válidos (os resolvidos continuam no histórico, mas não incomodam) */
 function alertasAbertos(){return ls(avKey,[]).filter(a=>!a.resolvido)}
 /* 7.6 — Relatório estilo Power BI: só administrador, somente leitura, dados reais */
-const PBI={periodo:30,tipo:"",operador:"",modelo:"",cor:"",cruz:null};
+const PBI={periodo:30,de:"",ate:"",diasParados:0,tipo:"",operador:"",modelo:"",cor:"",cruz:null};
+/* Recorte de datas do relatório.
+   PBI.periodo: 1 = hoje, 7 = últimos 7 dias, 30 = últimos 30 dias, 0 = mês atual,
+   -1 = personalizado (PBI.de, PBI.ate). PBI.diasParados usa o mesmo recorte. */
+const PERIODOS={"1":"Hoje","7":"7 dias","30":"30 dias","0":"M\u00EAs atual","-1":"Personalizado"};
+function pbiIntervalo(){
+ const agora=new Date();
+ const meiaNoite=new Date(agora.getFullYear(),agora.getMonth(),agora.getDate()).getTime();
+ const dia=86400000;
+ if(PBI.periodo===0)return{ini:new Date(agora.getFullYear(),agora.getMonth(),1).getTime(),fim:Infinity,rot:"mês atual"};
+ if(PBI.periodo===-1){
+  const ini=PBI.de?new Date(PBI.de+"T00:00:00").getTime():meiaNoite;
+  const fim=PBI.ate?new Date(PBI.ate+"T23:59:59").getTime():Infinity;
+  return{ini:Number.isFinite(ini)?ini:meiaNoite,fim:Number.isFinite(fim)?fim:Infinity,rot:"personalizado"};
+ }
+ const n=Number(PBI.periodo)||30;
+ return{ini:meiaNoite-(n-1)*dia,fim:Infinity,rot:n===1?"hoje":n+" dias"};
+}
 function pbiBase(){
- const d=new Date(),ini=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()-(PBI.periodo-1)*86400000;
- return M.filter(vivo).filter(m=>(m.ts||0)>=ini);
+ const {ini,fim}=pbiIntervalo();
+ return M.filter(vivo).filter(m=>(m.ts||0)>=ini&&(m.ts||0)<=fim);
 }
 /* aplica os filtros do topo + o filtro cruzado do clique */
 function pbiFiltrado(ignorar){
@@ -963,8 +991,42 @@ function pbiDados(){
   atualizadoEm:ultimo||Date.now(),
   baixo:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]),
   zerados:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v<=0),
+  parados:(function(){
+   /* usa o periodo do proprio relatorio; se estiver desligado, cai no periodo do topo */
+   const d=Number(PBI.diasParados)||Number(PBI.periodo)||30;
+   return parados(d>0?d:30);
+  })(),
   pendentes:REQ.length
  };
+}
+/* Exporta o recorte atual em planilha (CSV): movimentos + resumo por dia, tipo, modelo e cor */
+function pbiCSVPivo(){
+ if(!isA())return toast("Só o administrador exporta o relatório.",true);
+ const d=pbiDados();
+ if(!d.movs.length){toast("Nenhuma movimentação no recorte.",true);return}
+ const linhas=[["Resumo do recorte"],["Gerado em",new Date().toLocaleString("pt-BR")],
+  ["Recorte",pbiIntervalo().rot],["Tipo",PBI.tipo?TN[PBI.tipo]:"todos"],
+  ["Operador",PBI.operador||"todos"],["Modelo",PBI.modelo||"todos"],["Cor",PBI.cor||"todos"],[]];
+ linhas.push(["Por dia","Entradas","Saídas","Saldo"]);
+ d.dias.forEach(x=>linhas.push([x.dia,x.entradas,x.saidas,x.entradas-x.saidas]));
+ linhas.push([]);
+ linhas.push(["Por tipo","Movimentos","Quantidade"]);
+ ["in","out","adj","est"].forEach(t=>{
+  const doTipo=d.movs.filter(m=>m.t===t);
+  if(doTipo.length)linhas.push([TN[t]||t,doTipo.length,doTipo.reduce((a,m)=>a+Math.abs(m.q),0)]);
+ });
+ linhas.push([]);
+ linhas.push(["Por operador","Entradas","Saídas","Movimentos"]);
+ d.operadores.forEach(o=>linhas.push([o.nome,o.entradas,o.saidas,o.total]));
+ linhas.push([]);
+ linhas.push(["Modelo e cor","Unidades em estoque"]);
+ d.grupo.forEach(g=>linhas.push([g.nome,g.qtd]));
+ linhas.push([]);
+ linhas.push(["Data e hora","Produto","Código","Cor","Operador","Login","Tipo","Quantidade","Aparelho"]);
+ d.movs.forEach(m=>{const p=PP[idx[m.c]];
+  linhas.push([fmt(m.ts),p?p[1]:"",m.c,p?p[2]:"",m.o||"",m.u||"",m.t,m.q,m.aparelho||""])});
+ csv("relatorio_pivo_mdo_"+new Date().toISOString().slice(0,10)+".csv",linhas);
+ audit("EXPORTAÇÃO","relatório (resumo + detalhe)",d.movs.length+" linhas");
 }
 /* 7.6 — PDF: imprime só o relatório do recorte atual (sem instalar biblioteca) */
 function pbiPDF(){
@@ -1017,18 +1079,23 @@ function drawPbi(){
  const maxOp=Math.max(1,...d.operadores.map(o=>o.total));
  let h='<div class="card"><h3>📈 Relatório (Power BI)</h3>'+
   '<div class="mu">Somente consulta · dados deste aparelho · Atualizado em '+new Date(d.atualizadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>'+
-  '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">'+
-   '<select class="in" id="pbiP" style="margin:0;flex:1 1 90px"><option value="1"'+(PBI.periodo===1?" selected":"")+'>Hoje</option><option value="7"'+(PBI.periodo===7?" selected":"")+'>7 dias</option><option value="30"'+(PBI.periodo===30?" selected":"")+'>30 dias</option><option value="90"'+(PBI.periodo===90?" selected":"")+'>90 dias</option></select>'+
+  '<details id="pbiFiltros"><summary>⚙️ Filtros</summary><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">'+
+   '<select class="in" id="pbiP" style="margin:0;flex:1 1 90px">'+
+    ["1","7","30","0","-1"].map(function(v){return '<option value="'+v+'"'+(String(PBI.periodo)===v?" selected":"")+'>'+(PERIODOS[v]||v)+'</option>'}).join("")+'</select>'+
+   (PBI.periodo===-1?'<input type="date" class="in" id="pbiDe" value="'+esc(PBI.de||"")+'" style="margin:0;flex:1 1 120px" aria-label="De">'+'<input type="date" class="in" id="pbiAte" value="'+esc(PBI.ate||"")+'" style="margin:0;flex:1 1 120px" aria-label="At\u00E9">':'' )+
    '<select class="in" id="pbiT" style="margin:0;flex:1 1 90px">'+(PBI.tipo?"":'<option value="">Todos os tipos</option>')+
     ['in','out','adj'].map(t=>'<option value="'+t+'"'+(PBI.tipo===t?" selected":"")+'>'+TN[t]+'</option>').join("")+'</select>'+
    '<select class="in" id="pbiO" style="margin:0;flex:1 1 90px">'+opcoes(operadores,PBI.operador)+'</select>'+
    '<select class="in" id="pbiM" style="margin:0;flex:1 1 90px">'+opcoes(modelos,PBI.modelo)+'</select>'+
    '<select class="in" id="pbiC" style="margin:0;flex:1 1 90px">'+opcoes(cores,PBI.cor)+'</select>'+
+   '<select class="in" id="pbiS" style="margin:0;flex:1 1 110px" aria-label="Sem movimenta\u00e7\u00e3o">'+
+    [["0","Sem parados"],["30","Parado 30d"],["60","Parado 60d"],["90","Parado 90d"],["180","Parado 180d"]].map(function(o){return '<option value="'+o[0]+'"'+(String(PBI.diasParados)===o[0]?" selected":"")+'>'+o[1]+'</option>'}).join("")+'</select>'+
    '<button type="button" class="btn ghost" id="pbiL" style="width:auto">Limpar</button>'+
    '<button type="button" class="btn ghost" id="pbiA" style="width:auto">🔄 Atualizar</button>'+
-   '<button type="button" class="btn ghost" id="pbiX" style="width:auto">⬇ CSV</button>'+
+   '<button type="button" class="btn ghost" id="pbiX" style="width:auto">⬇ Planilha (resumo + detalhe)</button>'+
    '<button type="button" class="btn ghost" id="pbiF" style="width:auto">🖨 PDF</button>'+
-  '</div>'+(PBI.cruz?'<div class="mu" style="margin-top:6px">Filtro cruzado: '+esc(PBI.cruz.v)+' (toque de novo para tirar)</div>':'')+'</div>';
+  '</div></details>'+(PBI.cruz?'<div class="mu" style="margin-top:6px">Filtro cruzado: '+esc(PBI.cruz.v)+' (toque de novo para tirar)</div>':'')+'</div>';
+ h+='<div class="pbiGrade">';
  h+='<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">'+
   ['produtos|'+PP.length,'unidades|'+bal().reduce((a,v)=>a+v,0),'entradas|'+d.dias.reduce((a,x)=>a+x.entradas,0),'saídas|'+d.dias.reduce((a,x)=>a+x.saidas,0),'baixo|'+d.baixo.length,'zerados|'+d.zerados.length,'pendentes|'+d.pendentes].map(x=>{
    const [rot,val]=x.split("|");return'<div style="flex:1 1 90px;border:1px solid var(--bd);border-radius:10px;padding:8px"><b style="font-size:18px">'+val+'</b><div class="mu" style="font-size:11px">'+rot+'</div></div>'}).join("")+'</div></div>';
@@ -1039,12 +1106,16 @@ function drawPbi(){
  h+='<div class="card"><h3>Top 10 mais movimentados</h3>'+(d.produtos.slice(0,10).map(p=>'<div class="item" data-a="pbiProd" data-v="'+esc(p.codigo)+'"><span><b>'+esc(p.nome)+'</b><span class="mu">'+p.total+' mov.</span></span><span style="flex:1;margin-left:8px"><span style="display:block;background:#1f7bff;height:8px;border-radius:3px;width:'+Math.round(p.total/maxProd*100)+'%"></span></span></div>').join("")||'<div class="mu">Sem dados.</div>')+'</div>';
  h+='<div class="card"><h3>Por operador</h3>'+(d.operadores.map(o=>'<div class="item" data-a="pbiOp" data-v="'+esc(o.login)+'"><span><b>'+esc(o.nome)+'</b><span class="mu">'+o.total+' mov.</span></span><span style="flex:1;margin-left:8px"><span style="display:block;background:#0b2a7a;height:8px;border-radius:3px;width:'+Math.round(o.total/maxOp*100)+'%"></span></span></div>').join("")||'<div class="mu">Sem dados.</div>')+'</div>';
  h+='<div class="card"><h3>Estoque por modelo e cor</h3>'+(d.grupo.slice(0,12).map(g=>'<div class="item"><span>'+esc(g.nome)+'</span><span class="mu">'+g.qtd+' ('+Math.round(g.qtd/totalGrupo*100)+'%)</span></div>').join("")||'<div class="mu">Sem estoque.</div>')+'</div>';
- h+='<div class="card"><h3>⚠ Atenção</h3>'+(d.zerados.length||d.baixo.length?
+ h+='<div class="card"><h3>⚠ Atenção</h3>'+(PBI.diasParados?'<div class="mu">inclui '+PBI.diasParados+' dia(s) sem movimentação</div>':'')+(d.zerados.length||d.baixo.length||d.parados.length?
   d.zerados.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill z">zerado</span></div>').join("")+
-  d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")
+  d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+
+  d.parados.slice(0,20).map(x=>'<div class="item"><span>'+esc(x.nome)+'</span><span class="pill">parado</span></div>').join("")
   :'<div class="mu">Nenhum produto em alerta.</div>')+'</div>';
  h+='<div class="card"><h3>Detalhe ('+d.movs.length+')</h3>'+
-  (d.movs.slice().reverse().slice(0,50).map(m=>{const p=PP[idx[m.c]];return'<div class="item"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+' '+m.q+'</span></div>'}).join("")||'<div class="mu">Sem movimentação no recorte.</div>')+'</div>';
+  '<div class="mu">'+(PBI.cruz?'recorte: '+esc(PBI.cruz.v)+' · ':'')+'toque em um item para abrir os detalhes dele</div>'+
+  (d.movs.length?d.movs.slice().reverse().slice(0,50).map(m=>{const p=PP[idx[m.c]];
+   return '<div class="item" data-a="pbiMov" data-v="'+esc(m.c)+'" title="'+esc(fmt(m.ts)+' · '+(TN[m.t]||m.t)+' '+m.q+' · '+(m.o||""))+'"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="pill'+(m.t==="out"?" z":"")+'">'+(m.t==="out"?"-":"+")+Math.abs(m.q)+'</span></div>'
+  }).join(""):'<div class="mu">Sem movimentação no recorte.</div>')+'</div>';
  el.innerHTML=h;
  const on=(id,fn)=>{const e=$(id);if(e)fn(e)};
  on("pbiP",e=>e.onchange=()=>{PBI.periodo=Number(e.value)||30;PBI.cruz=null;drawPbi()});
@@ -1053,11 +1124,12 @@ function drawPbi(){
  on("pbiM",e=>e.onchange=()=>{PBI.modelo=e.value;drawPbi()});
  on("pbiC",e=>e.onchange=()=>{PBI.cor=e.value;drawPbi()});
  on("pbiL",e=>e.onclick=()=>{PBI.periodo=30;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;drawPbi()});
+ on("pbiS",e=>e.onchange=()=>{PBI.diasParados=Number(e.value)||0;drawPbi()});
  on("pbiA",e=>e.onclick=()=>{drawPbi();toast("Atualizado")});
- on("pbiX",e=>e.onclick=()=>pbiCSV());
+ on("pbiX",e=>e.onclick=()=>pbiCSVPivo());
  on("pbiF",e=>e.onclick=()=>pbiPDF());
  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
-  const tipo={pbiDia:"dia",pbiProd:"produto",pbiOp:"operador"}[b.dataset.a];
+  const tipo={pbiDia:"dia",pbiProd:"produto",pbiOp:"operador",pbiMov:"produto"}[b.dataset.a];
   if(!tipo)return;
   PBI.cruz=(PBI.cruz&&PBI.cruz.v===b.dataset.v)?null:{tipo,v:b.dataset.v};
   drawPbi();
@@ -2001,5 +2073,5 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.5.0 · 2026-02</div>
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.6.0 · 2026-02</div>
 </body></html>

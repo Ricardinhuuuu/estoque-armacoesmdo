@@ -669,6 +669,66 @@ t("foto: a primeira tentativa é a imagem crua e há recorte, ampliação e giro
   okv(run(env, "typeof qLerFotoRapido") === "function", "falta a leitura em ondas");
 });
 
+t("7.6 relatório: períodos hoje/7/30/mês/personalizado recortam as datas", () => {
+  const env = novo(); run(env, "cur={l:'x',r:'adm'};PBI.periodo=1;");
+  const hoje = run(env, "pbiIntervalo()");
+  const meia = new Date(); meia.setHours(0,0,0,0);
+  okv(hoje.ini === meia.getTime(), "hoje deve começar à meia-noite");
+  run(env, "PBI.periodo=7");
+  const sete = run(env, "pbiIntervalo()");
+  eq(Math.round((hoje.ini - sete.ini) / 86400000), 6, "7 dias = hoje + 6 anteriores:");
+  run(env, "PBI.periodo=0");
+  const mes = run(env, "pbiIntervalo()");
+  const dia1 = new Date(); dia1.setDate(1); dia1.setHours(0,0,0,0);
+  eq(mes.ini, dia1.getTime(), "mês atual começa no dia 1:");
+  run(env, "PBI.periodo=-1;PBI.de='2026-01-05';PBI.ate='2026-01-10'");
+  const per = run(env, "pbiIntervalo()");
+  okv(per.ini < per.fim, "personalizado precisa de início antes do fim");
+  eq(new Date(per.ini).getDate(), 5, "dia inicial do personalizado:");
+});
+
+t("7.6 relatório: filtro por tipo, operador, modelo e cor", () => {
+  const env = novo(); run(env, "cur={l:'x',r:'adm'}");
+  run(env, "PP=[['111','Modelo A','Preto',0],['222','Modelo B','Azul',0]];idx={'111':0,'222':1};" +
+           "M=[{c:'111',t:'in',q:5,ts:Date.now(),u:'ana',o:'Ana'},{c:'222',t:'out',q:2,ts:Date.now(),u:'bia',o:'Bia'}];" +
+           "PBI.periodo=30;PBI.tipo='';PBI.operador='';PBI.modelo='';PBI.cor='';PBI.cruz=null;");
+  eq(run(env, "pbiFiltrado().length"), 2, "sem filtro:");
+  run(env, "PBI.tipo='out'"); eq(run(env, "pbiFiltrado().length"), 1, "só saídas:");
+  run(env, "PBI.tipo='';PBI.operador='ana'"); eq(run(env, "pbiFiltrado().length"), 1, "só a Ana:");
+  run(env, "PBI.operador='';PBI.modelo='Modelo B'"); eq(run(env, "pbiFiltrado().length"), 1, "só o Modelo B:");
+  run(env, "PBI.modelo='';PBI.cor='Preto'"); eq(run(env, "pbiFiltrado().length"), 1, "só Preto:");
+});
+
+t("7.6 relatório: filtro cruzado e recorte por produto no detalhe", () => {
+  const env = novo(); run(env, "cur={l:'x',r:'adm'}");
+  run(env, "PP=[['111','Modelo A','Preto',0],['222','Modelo B','Azul',0]];idx={'111':0,'222':1};" +
+           "M=[{c:'111',t:'in',q:5,ts:Date.now(),u:'ana',o:'Ana'},{c:'222',t:'out',q:2,ts:Date.now(),u:'bia',o:'Bia'}];" +
+           "PBI.periodo=30;PBI.tipo='';PBI.operador='';PBI.modelo='';PBI.cor='';PBI.cruz={tipo:'produto',v:'111'};");
+  eq(run(env, "pbiFiltrado().length"), 1, "filtro cruzado por produto:");
+  run(env, "PBI.cruz={tipo:'operador',v:'bia'}");
+  eq(run(env, "pbiFiltrado().length"), 1, "filtro cruzado por operador:");
+});
+
+t("7.6 relatório: o cartão Atenção inclui os produtos parados", () => {
+  const env = novo(); run(env, "cur={l:'x',r:'adm'}");
+  /* o produto sem movimento precisa TER estoque: sem estoque e sem movimento ele é "vazio",
+     não "parado" — essa é a regra do app desde a Seção 10.3 e está certa. */
+  run(env, "PP=[['111','Modelo A','Preto',0],['222','Modelo B','Azul',3]];idx={'111':0,'222':1};" +
+           "M=[{c:'111',t:'in',q:5,ts:Date.now(),u:'ana',o:'Ana'}];" +
+           "PBI.periodo=30;PBI.diasParados=30;PBI.tipo='';PBI.operador='';PBI.modelo='';PBI.cor='';PBI.cruz=null;");
+  const d = run(env, "pbiDados()");
+  okv(Array.isArray(d.parados), "os dados do relatório devem trazer os parados");
+  okv(d.parados.some((x) => x.codigo === "222"), "o produto sem movimento deve aparecer como parado");
+});
+
+t("7.6 relatório: exportação do recorte traz resumo e detalhe", () => {
+  const env = novo(); run(env, "cur={l:'x',r:'adm'}");
+  okv(run(env, "typeof pbiCSVPivo") === "function", "falta a exportação do recorte");
+  const fonte = run(env, "String(pbiCSVPivo)");
+  ["Por dia", "Por tipo", "Por operador", "Data e hora"].forEach((x) =>
+    okv(fonte.includes(x), "a planilha deve ter a seção " + x));
+});
+
 t("2.3/2.4 estratégias de foto cobrem rotação, cinza, contraste e recorte", () => {
   const env = novo();
   const e = run(env, "qEstrategias()");
