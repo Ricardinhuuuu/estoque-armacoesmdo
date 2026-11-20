@@ -438,6 +438,21 @@ t("1.3 leitura contínua a ~25-30 tentativas por segundo", () => {
   okv(html.includes("width:{ideal:1280},height:{ideal:720}"), "resolução de referência não é 1280x720");
   okv(html.includes("height:Math.floor(h*.42)"), "área de leitura não está larga (42% da altura)");
 });
+t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
+  const env = novo();
+  const html = fs.readFileSync(HTML, "utf8");
+  /* o visor e a barra precisam ser sticky, não fixed no topo cobrindo o conteúdo */
+  okv(/body\.camLarga #camW,body\.camLarga #zoomBar\{[^}]*position:sticky/.test(html),
+    "o visor deveria acompanhar a rolagem (position:sticky)");
+  okv(!/body\.camLarga #camW,body\.camLarga #zoomBar\{[^}]*position:fixed/.test(html),
+    "o visor não deveria ficar preso por cima do conteúdo (position:fixed)");
+  /* a barra de zoom cola logo abaixo do visor, usando a altura medida */
+  okv(html.includes("--camTop"), "falta a medida que posiciona a barra abaixo do visor");
+  okv(typeof run(env, "camTopo") === "function", "falta a função que mede o visor");
+  /* medir o visor não pode quebrar */
+  okv(run(env, "camTopo(), true") === true, "camTopo deveria rodar sem erro");
+});
+
 t("item 3: o zoom de abertura é 1x e a barra continua aplicando zoom", () => {
   const env = novo();
   eq(run(env, "ZOOM"), 1, "zoom de abertura (sem ampliação):");
@@ -669,7 +684,8 @@ t("câmera: visor mais baixo, largura inteira e botões de zoom", () => {
 
 t("câmera: visor ocupa a largura toda da tela enquanto a câmera roda", () => {
   const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
-  okv(/body\.camLarga #camW[^{]*\{[^}]*position:fixed/.test(html), "o visor deve sair do cartão e ocupar a tela");
+  /* item 1: o visor sai do cartão e ocupa a tela, mas acompanha a rolagem (sticky, não fixed) */
+  okv(/body\.camLarga #camW[^{]*\{[^}]*position:(sticky|fixed)/.test(html), "o visor deve sair do cartão e ocupar a tela");
   okv(/body\.camLarga #camW[^{]*\{[^}]*left:0[^}]*right:0/.test(html), "a faixa vai de borda a borda");
   okv(/body\.camLarga #zoomBar/.test(html), "a barra de zoom acompanha o visor");
   okv(/classList\.add\("camLarga"\)/.test(html), "ligar a câmera ativa o modo largo");
