@@ -69,6 +69,9 @@ main{padding:14px;max-width:640px;margin:0 auto}
 #qCamBox video,#qCamBox canvas{width:100%;height:100%;object-fit:cover;display:block}
 body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-ratio:4/3;height:auto;max-height:46vh;border-radius:0!important;border:0!important;border-bottom:3px solid var(--b)!important;margin-top:0!important;padding-top:env(safe-area-inset-top)}
 #zoomBar.on{display:flex}
+/* ETAPA 2 — barra "Mostrar" da tela Admin */
+#adm .admNav .admg{display:flex;flex-wrap:wrap;gap:6px}
+#adm .admNav .pill{font-size:13px;padding:6px 10px}
 /* Visor na largura toda da tela: enquanto a camera roda, o visor e a barra de zoom
    saem do cartao (que tem padding e limite de 640px) e viram uma faixa de borda a borda.
    Sem a camera, tudo volta para dentro do cartao como antes. */
@@ -1539,46 +1542,68 @@ $("hT").onchange=()=>{HF.t=$("hT").value;draw()};
 $("hP").onchange=()=>{HF.dias=Number($("hP").value)||0;draw()};
 $("hL").onclick=()=>{HF.q="";HF.t="";HF.dias=0;$("hQ").value="";$("hT").value="";$("hP").value="0";draw()};
 $("hX").onclick=()=>histCSV();
+/* ===== ETAPA 2 — a tela Admin em blocos =====
+   Antes eram 11 cartões soltos, sem ordem. Agora ficam agrupados por assunto, com o dia a dia
+   primeiro. Os cartões são os MESMOS — só mudou onde cada um aparece. */
+const ADM_BLOCOS=[
+ {id:"dia",   rot:"📌 Dia a dia"},
+ {id:"pessoas",rot:"👥 Pessoas"},
+ {id:"estoque",rot:"📦 Estoque e inventário"},
+ {id:"sistema",rot:"⚙️ Sistema"},
+ {id:"registro",rot:"📜 Registro e auditoria"}];
+let ADMABA=null;   /* bloco escolhido nesta sessão; o localStorage é só para lembrar depois */
+function admBloco(){return ADMABA||ls("admbl",null)||"todos"}
+function admGrupo(){
+ return '<div class="card admNav"><div class="mu" style="margin-bottom:6px">Mostrar</div><div class="admg">'+
+  '<button type="button" class="pill'+(admBloco()==="todos"?" at":"")+'" data-a="admB" data-i="todos">Tudo</button>'+
+  ADM_BLOCOS.map(x=>'<button type="button" class="pill'+(admBloco()===x.id?" at":"")+'" data-a="admB" data-i="'+x.id+'">'+x.rot+'</button>').join("")+
+  '</div></div>';
+}
+/* abre/fecha a janela de um bloco: devolve true quando o cartão deve aparecer */
+function admMostra(bloco){const v=admBloco();return v==="todos"||v===bloco}
+function admAbrirCartao(bloco,titulo,corpo){return admMostra(bloco)?('<div class="card" data-bloco="'+bloco+'">'+titulo+corpo+'</div>'):""}
+
 function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]);
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
- let h='<div class="card"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
- h+='<div class="card"><h3>⚠ Abaixo do mínimo ('+low.length+')</h3>'+low.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+'<div class="mu">Toque num produto da aba Estoque para definir o mínimo.</div>'+(low.length?'<button type="button" class="btn ghost" data-a="wa">📲 Enviar alerta pelo WhatsApp</button>':'')+'</div>';
- h+='<div class="card"><h3>👥 Usuários</h3>'+U.map((u,i)=>{const st=u.st==="bloq"?" · bloqueado":u.st==="desat"?" · desativado":u.temp?" · troca de senha pendente":"";
+ let h=admGrupo();
+ if(admMostra("dia"))h+='<div class="card" data-bloco="dia"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
+ if(admMostra("estoque"))h+='<div class="card" data-bloco="estoque"><h3>⚠ Abaixo do mínimo ('+low.length+')</h3>'+low.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+'<div class="mu">Toque num produto da aba Estoque para definir o mínimo.</div>'+(low.length?'<button type="button" class="btn ghost" data-a="wa">📲 Enviar alerta pelo WhatsApp</button>':'')+'</div>';
+ if(admMostra("pessoas"))h+='<div class="card" data-bloco="pessoas"><h3>👥 Usuários</h3>'+U.map((u,i)=>{const st=u.st==="bloq"?" · bloqueado":u.st==="desat"?" · desativado":u.temp?" · troca de senha pendente":"";
   return'<div class="item"><span><b>'+esc(u.n)+'</b><span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+st+'</span></span><span><button type="button" class="pill" data-a="pw" data-i="'+i+'">Senha</button> '+(u.st==="bloq"?'<button type="button" class="pill" data-a="ub" data-i="'+i+'">Desbloquear</button> ':'')+(u.st!=="desat"&&u.l!==cur.l?'<button type="button" class="pill n" data-a="du" data-i="'+i+'">Desativar</button> ':'')+(u.st==="desat"?'<button type="button" class="pill" data-a="ua" data-i="'+i+'">Reativar</button>':'')+'</span></div>'}).join("")+
  '<input class="in" id="nuN" placeholder="Nome completo" autocomplete="name"><input class="in" id="nuL" placeholder="Login" autocapitalize="none"><input class="in" id="nuP" type="password" placeholder="Senha provisória (mín. 6)"><select class="in" id="nuR"><option value="op">Operador</option><option value="admin">Administrador</option></select><button type="button" class="btn" data-a="au">+ Criar usuário</button></div>';
- h+='<div class="card"><h3>📦 Inventário</h3><div class="mu">'+(INV.ativo?'Em andamento · responsável: '+esc(INV.resp)+' · '+Object.keys(INV.itens||{}).length+' produto(s) contado(s)':'Nenhum inventário em andamento.')+'</div>'+
+ if(admMostra("estoque"))h+='<div class="card" data-bloco="estoque"><h3>📦 Inventário</h3><div class="mu">'+(INV.ativo?'Em andamento · responsável: '+esc(INV.resp)+' · '+Object.keys(INV.itens||{}).length+' produto(s) contado(s)':'Nenhum inventário em andamento.')+'</div>'+
   '<button type="button" class="btn" data-a="invIni">'+(INV.ativo?'🔄 Reiniciar inventário':'📦 Iniciar inventário')+'</button>'+
   (INV.ativo?'<button type="button" class="btn ghost" data-a="invFim">✅ Concluir e ver divergências</button>':'')+
   ((ls("mdo_invh",[]).length)?'<button type="button" class="btn ghost" data-a="invHist">🕘 Histórico de inventários</button>':'')+'</div>';
- h+='<div class="card"><h3>📋 Contagem de inventário</h3><div class="mu">Use o modo "Contagem" na aba Bipar e bipe cada peça.</div>'+cn.map(c=>{const i=idx[c],d=CNT[c].q-b[i];return'<div class="item"><span>'+esc(PP[i][1])+' '+esc(PP[i][2])+'<span class="mu">Contado '+CNT[c].q+' · Sistema '+b[i]+'</span></span><span><button type="button" class="pill" data-a="cm" data-i="'+esc(c)+'">−</button> <span class="pill '+(d?'n':'')+'">'+(d>0?'+':'')+d+'</span></span></div>'}).join("")+
+ if(admMostra("estoque"))h+='<div class="card" data-bloco="estoque"><h3>📋 Contagem de inventário</h3><div class="mu">Use o modo "Contagem" na aba Bipar e bipe cada peça.</div>'+cn.map(c=>{const i=idx[c],d=CNT[c].q-b[i];return'<div class="item"><span>'+esc(PP[i][1])+' '+esc(PP[i][2])+'<span class="mu">Contado '+CNT[c].q+' · Sistema '+b[i]+'</span></span><span><button type="button" class="pill" data-a="cm" data-i="'+esc(c)+'">−</button> <span class="pill '+(d?'n':'')+'">'+(d>0?'+':'')+d+'</span></span></div>'}).join("")+
  (cn.length?'<button type="button" class="btn" data-a="ap">Aplicar ajustes ao estoque</button><button type="button" class="btn ghost" data-a="cc">Limpar contagem</button>':'')+
  (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
- h+='<div class="card"><h3>🕵 Auditoria (últimos 30)</h3>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></div>';
- h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){
+ if(admMostra("registro"))h+='<div class="card" data-bloco="registro"><h3>🕵 Auditoria (últimos 30)</h3>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></div>';
+ if(admMostra("dia"))h+='<div class="card" data-bloco="dia"><h3>🔔 Avisos</h3>'+((function(){
    const todos=ls(avKey,[]),av=todos.filter(a=>a.lido!==true&&!a.resolvido);
    const resolvidos=todos.filter(a=>a.resolvido&&a.lido!==true).length;
    return av.map((a,i)=>'<div class="item"><span><b>'+esc(a.m)+'</b><span class="mu">'+fmt(a.ts)+'</span></span><button type="button" class="pill" data-a="av" data-i="'+i+'">Marcar lido</button></div>').join("")||'<div class="mu">Nenhum aviso pendente.</div>'
     +(resolvidos?'<div class="mu" style="margin-top:6px">'+resolvidos+' aviso(s) já resolvido(s) pela reposição ou pela sincronização.</div>':'');
  })())+'</div>';
  /* 7.5 — o administrador escolhe quais alertas quer receber */
- h+='<div class="card"><h3>⚙️ Quais alertas avisar</h3><div class="mu">Desligar um alerta para de criar avisos novos. Os avisos antigos ficam no histórico.</div>'+
+ if(admMostra("sistema"))h+='<div class="card" data-bloco="sistema"><h3>⚙️ Quais alertas avisar</h3><div class="mu">Desligar um alerta para de criar avisos novos. Os avisos antigos ficam no histórico.</div>'+
   Object.keys(ALERTAS).map(k=>{const on=alertaLigado(k);
    return '<div class="item"><span><b>'+esc(ALERTAS[k].rot)+'</b><span class="mu">'+(on?"ligado":"desligado")+'</span></span>'+
     '<button type="button" class="pill" data-a="alCfg" data-i="'+k+'" data-v="'+(on?"0":"1")+'">'+(on?"Desligar":"Ligar")+'</button></div>'}).join("")+'</div>';
- if(contasAtivas())h+='<div class="card"><h3>👥 Contas no servidor</h3><div class="mu" id="ctS">'+(sessValida()?"Sessão válida — o servidor decide papel e bloqueio.":"Sem sessão de servidor: entre novamente para administrar contas.")+'</div>'+
+ if(contasAtivas())if(admMostra("pessoas"))h+='<div class="card" data-bloco="pessoas"><h3>👥 Contas no servidor</h3><div class="mu" id="ctS">'+(sessValida()?"Sessão válida — o servidor decide papel e bloqueio.":"Sem sessão de servidor: entre novamente para administrar contas.")+'</div>'+
   '<button type="button" class="btn" data-a="ctListar">🔄 Carregar contas do servidor</button>'+
   '<div id="ctL"></div></div>';
- h+='<div class="card"><h3>🔄 Sincronização</h3><div class="mu" id="syS"></div>'+
+ if(admMostra("sistema"))h+='<div class="card" data-bloco="sistema"><h3>🔄 Sincronização</h3><div class="mu" id="syS"></div>'+
   '<input class="in" id="syU" placeholder="Endereço do app na Vercel (https://seu-app.vercel.app)" value="'+esc(SYNC.url||"")+'" autocapitalize="none" inputmode="url">'+
   '<input class="in" id="syT" type="password" placeholder="Segredo compartilhado (SYNC_TOKEN)" value="'+esc(SYNC.token||"")+'" autocapitalize="none">'+
   '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
- h+='<div class="card"><h3>🧪 Conferência das leituras</h3>'+
+ if(admMostra("registro"))h+='<div class="card" data-bloco="registro"><h3>🧪 Conferência das leituras</h3>'+
   '<div class="mu" id="leitR">'+esc(leitResumo())+'</div>'+
   '<button type="button" class="btn ghost" data-a="leitCSV">⬇ Exportar leituras (CSV)</button>'+
   '<button type="button" class="btn ghost" data-a="leitLimpar">🗑 Limpar registro de leituras</button></div>';
- h+='<div class="card"><h3>📷 Diagnóstico da câmera</h3><div class="mu" id="camA">Aparelho: '+esc(camAparelho())+'</div>'+
+ if(admMostra("sistema"))h+='<div class="card" data-bloco="sistema"><h3>📷 Diagnóstico da câmera</h3><div class="mu" id="camA">Aparelho: '+esc(camAparelho())+'</div>'+
   '<div class="mu" id="camD">'+esc(camDiagTexto())+'</div>'+
   '<button type="button" class="btn" data-a="camCopiar">📋 Copiar diagnóstico</button>'+
   '<button type="button" class="btn ghost" data-a="camZerar">🔄 Recomeçar medição da câmera</button></div>';
@@ -1586,13 +1611,13 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  h+='<div id="opRel"></div>';
  h+='<div id="pbi"></div>';
  h+='<div id="rel"></div>';
- h+='<div class="card"><h3>📥 Importar movimentações (Excel)</h3>'+
+ if(admMostra("estoque"))h+='<div class="card" data-bloco="estoque"><h3>📥 Importar movimentações (Excel)</h3>'+
  '<div class="mu">Entrada, baixa, ajuste ou contagem em lote. A importação de produtos (cadastro) continua em Dados.</div>'+
  '<button type="button" class="btn" data-a="impX">📥 Importar movimentações (.xlsx/.csv)</button>'+
  '<button type="button" class="btn ghost" data-a="impModelo">⬇ Baixar modelo (.xlsx)</button>'+
  '<button type="button" class="btn ghost" data-a="impEstoque">⬇ Exportar estoque atual no formato do modelo</button>'+
  '<div id="impRel"></div></div>';
- h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
+ if(admMostra("sistema"))h+='<div class="card" data-bloco="sistema"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
  $("adm").innerHTML=h;
  $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
@@ -1608,6 +1633,10 @@ async function act(a,i){
  if(a==="impModelo")return impModelo(false);
  if(a==="impEstoque")return impModelo(true);
  if(a==="impRejX")return impRejX();
+ if(a==="admB"){const v=String(i||"todos");
+  try{if(v==="todos")localStorage.removeItem("mdo_admbl");else localStorage.setItem("mdo_admbl",v)}catch(e){}
+  ADMABA=v;
+  draw();return}
  if(a==="ctListar"){apiContas("listar").then(j=>{
    const alvo=$("ctL");if(!alvo)return;
    if(!j.ok){alvo.innerHTML='<div class="mu">'+esc(j.erro||"Falhou")+'</div>';return}
