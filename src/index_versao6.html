@@ -487,12 +487,27 @@ function confirmar(ids){
 /* ETAPA 3 — manda o catálogo junto com as movimentações: o servidor precisa conhecer o produto
    antes de aceitar a baixa dele. Vai só o necessário (código, descrição, cor, saldo inicial). */
 function produtosParaServidor(){
- return PP.map(p=>[p[0],p[1],p[2],Number(p[3])||0])
-  .map(a=>({codigo:String(a[0]),descricao:String(a[1]||a[0]),cor:String(a[2]||""),inicial:Number(a[3])||0}));
+ /* ETAPA 3 — o inicial vai ao servidor como o estado ANTERIOR aos movimentos que este aparelho
+    envia. Mandar o saldo atual fazia o servidor somar o mesmo histórico duas vezes (provado:
+    10 virava 7). Aqui devolvemos saldo atual + saídas − entradas do que está no aparelho.   */
+ const mv={};M.forEach(m=>{if(m&&m.c){const q=Number(m.q)||0;mv[m.c]=(mv[m.c]||0)+(m.t==="out"?q:-q)}});
+ const b=bal();
+ return PP.map(p=>{
+  const c=p[0], saldo=(b[idx[c]]!=null?b[idx[c]]:(Number(p[3])||0));
+  return {codigo:String(c),descricao:String(p[1]||c),cor:String(p[2]||""),inicial:saldo+(mv[c]||0)};
+ });
+}
+/* ETAPA 3 — quantos movimentos o celular já tem, por produto.
+   O servidor só usa o "inicial" do aparelho se o produto for novo nele; se já existe, mantém o
+   inicial do servidor e aplica apenas os movimentos que faltam. Sem isso o saldo dobrava.  */
+function historicoDoAparelho(){
+ const n={};
+ M.forEach(m=>{if(m&&m.c)n[m.c]=(n[m.c]||0)+1});
+ return n;
 }
 async function enviarLote(movs){
  const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/movimentos",{
-  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs,produtos:produtosParaServidor()})});
+  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs,produtos:produtosParaServidor(),historico:historicoDoAparelho()})});
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
  return j;
