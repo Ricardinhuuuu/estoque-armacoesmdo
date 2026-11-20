@@ -80,7 +80,7 @@ body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-rat
 body.camLarga #camW,body.camLarga #zoomBar{position:sticky;left:0;right:0;z-index:60}
 body.camLarga #camW{top:0;padding-top:env(safe-area-inset-top)}
 body.camLarga #zoomBar{top:var(--camTop,0px)}
-body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:4/3;height:auto;max-height:46vh}
+body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:4/3;height:auto;max-height:46vh;overflow:hidden}
 body.camLarga #zoomBar{background:var(--card);border:0;border-bottom:1px solid var(--bd);border-radius:0;margin-top:0;padding:8px 12px}
 /* o laser acompanha o visor colado no topo */
 body.camLarga #gl{inset:env(safe-area-inset-top) 0 0 0;border-radius:0}
@@ -1962,10 +1962,17 @@ function ajustarProporcao(box){
   const w=v.videoWidth,h=v.videoHeight;
   if(!w||!h)return;
   const alvo=box;
-  /* proporcao entre 0.75 e 1.34 (retrato/quadrado) mantem a imagem inteira sem tarja */
-  const p=Math.max(0.75,Math.min(4/3,h/w));
-  alvo.style.aspectRatio=String(1/p);camTopo();   /* largura/altura */
-  alvo.style.maxHeight="56vh";camTopo();
+  /* VISOR PADRÃO — igual no Android e no iPhone.
+     Antes a caixa seguia a proporção crua do vídeo, e cada aparelho entrega um formato diferente
+     (iPhone 1280×720 = 1,78; Android 640×480 = 1,33 ou até em pé). Resultado: visor de tamanho
+     diferente em cada celular. Agora a caixa é SEMPRE 4:3 e o vídeo é desenhado em "cover",
+     preenchendo-a sem tarja. O formato do vídeo só é registrado para o diagnóstico.          */
+  const retrato=h>w;
+  alvo.style.aspectRatio=retrato?"3/4":"4/3";
+  alvo.style.maxHeight="46vh";
+  const vv=alvo.querySelector("video");
+  if(vv){vv.style.objectFit="cover";vv.style.width="100%";vv.style.height="100%"}
+  camTopo();
  }catch(e){}
 }
 /* confiança da última leitura feita pelo leitor nativo (null quando o leitor não informa) */
