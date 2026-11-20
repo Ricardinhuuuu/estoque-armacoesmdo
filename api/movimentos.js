@@ -62,8 +62,9 @@ async function garantirTabelas(db) {
    Aqui os produtos novos são gravados ANTES da validação dos movimentos.
    Produto que já existe NÃO é sobrescrito: o servidor nunca desfaz um cadastro por causa de um
    aparelho antigo. O saldo inicial só é usado no cadastro novo.                            */
-async function cadastrarProdutosDoLote(db, produtos) {
+async function cadastrarProdutosDoLote(db, produtos, historico) {
   if (!Array.isArray(produtos) || !produtos.length) return 0;
+  const hist = historico && typeof historico === "object" ? historico : {};
   let novos = 0;
   for (const p of produtos.slice(0, 2000)) {
     if (!p) continue;
@@ -71,6 +72,12 @@ async function cadastrarProdutosDoLote(db, produtos) {
     if (!codigo) continue;
     const descricao = String(p.descricao || p.nome || codigo).slice(0, 300);
     const cor = String(p.cor || "").slice(0, 80);
+    /* ETAPA 3 — contagem dupla: o "inicial" que o aparelho manda é o saldo ATUAL dele, que já é
+       o inicial menos os movimentos que ele tem. O servidor recalcula o saldo pelo histórico
+       (inicial + movimentos), então esse número só pode ser gravado UMA vez, no cadastro NOVO —
+       o que o "on conflict do nothing" abaixo garante. Produto que já existe mantém o inicial do
+       servidor e recebe apenas os movimentos que faltavam. O histórico vai no JSON para o
+       diagnóstico e não entra na conta.                                                    */
     const inicial = Number(p.inicial) || 0;
     try {
       const r = await sql(
@@ -147,7 +154,7 @@ module.exports = async function handler(req, res) {
   try {
     await garantirTabelas(db);
     /* ETAPA 3 — grava o catálogo que veio no lote antes de validar os movimentos */
-    const produtosNovos = await cadastrarProdutosDoLote(db, corpo.produtos);
+    const produtosNovos = await cadastrarProdutosDoLote(db, corpo.produtos, corpo.historico);
     const produtos = await carregarProdutos(db);
     const existentes = await carregarMovimentos(db);
 
