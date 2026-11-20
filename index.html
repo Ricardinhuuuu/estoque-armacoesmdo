@@ -1845,11 +1845,41 @@ function guardarQuadro(v){
 /* (b) troca de código muito rápida costuma ser leitura errada: só aceita se a confiança for boa */
 /* Anti-duplicado: bloqueia só o MESMO código por pouco tempo; o próximo entra na hora.
    Leitura de confiança baixa logo depois de outra também é descartada (evita falso positivo). */
+/* ===== Trava anti-duplicidade (item 5 do pedido) =====
+   Um bip = uma baixa. Depois de aceitar um código, o leitor fica TRAVADO até:
+   (a) passarem quadros seguintes sem achar o mesmo código (operador afastou a etiqueta) E
+   (b) passarem pelo menos 1200 ms desde a leitura.
+   Sem isso, no iPhone o mesmo código era aceito a cada 700 ms e gerava várias baixas. */
+const TRAVA={cod:"",desde:0,limpos:0};        /* cod = código travado; limpos = quadros seguidos sem ele */
+const TRAVA_MS=1200;                          /* tempo mínimo entre dois bips do mesmo código */
+const TRAVA_QUADROS=4;                        /* quadros seguidos sem o código para liberar */
+function travaAtiva(){return !!TRAVA.cod&&(Date.now()-TRAVA.desde)<TRAVA_MS||(!!TRAVA.cod&&TRAVA.limpos<TRAVA_QUADROS)}
+/* chamado a cada quadro SEM leitura: é o que libera a trava quando a etiqueta sai da frente */
+function travaQuadroLimpo(){if(TRAVA.cod&&TRAVA.limpos<TRAVA_QUADROS)TRAVA.limpos++}
+/* mostra no visor que o leitor está travado (o operador entende por que não bipa de novo) */
+function travaAviso(){const m=$("camMsg");if(!m)return;
+ m.dataset.trava="1";m.textContent="✅ Lido. Afaste a etiqueta para bipar de novo."}
+function travaSoltar(){const m=$("camMsg");if(m&&m.dataset.trava){m.dataset.trava="";m.textContent=""}}
+
 const dedupe=t=>{const agora=Date.now();const c=String(t);
  const fraca=ultimaConf!=null&&ultimaConf<0.45;
- if(c===last){if(agora-lastT<700)return false;lastT=agora;scan(c);return true}
- if(last&&agora-lastT<300&&fraca)return false;   /* leitura duvidosa logo depois de outra: ignora */
- last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);return true};
+ /* 1) já existe uma leitura travada: nada entra até liberar */
+ if(TRAVA.cod){
+  if(c===TRAVA.cod){TRAVA.limpos=0;return false}   /* mesmo código ainda na frente: ignora */
+  if(travaAtiva())return false;                     /* outra etiqueta, mas trava ainda ativa */
+ }
+ if(c===last&&agora-lastT<TRAVA_MS)return false;
+ if(last&&agora-lastT<300&&fraca)return false;      /* leitura duvidosa logo depois de outra */
+ last=c;lastT=agora;
+ /* 2) TRAVA IMEDIATA nesta leitura */
+ TRAVA.cod=c;TRAVA.desde=agora;TRAVA.limpos=0;
+ travaAviso();
+ CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);return true};
+/* libera a trava quando o código saiu de frente e o tempo mínimo passou */
+function travaVerificar(){
+ if(!TRAVA.cod)return;
+ if(Date.now()-TRAVA.desde>=TRAVA_MS&&TRAVA.limpos>=TRAVA_QUADROS){TRAVA.cod="";TRAVA.limpos=0;travaSoltar()}
+}
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
@@ -1927,7 +1957,7 @@ async function startNative(box,f){
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
  let on=true;
- (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(()=>{rodando=false});
+ (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}else{travaQuadroLimpo();travaVerificar()}}).catch(()=>{}).then(()=>{rodando=false});
    if(Date.now()-(ULTQUADRO?ULTQUADRO.quando:0)>400)guardarQuadro(v)}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
  const mover=async(alvo)=>{
   const t=stream.getVideoTracks()[0],c=t&&t.getCapabilities&&t.getCapabilities();
@@ -1942,6 +1972,8 @@ async function startNative(box,f){
 async function startLib(box){
  const F=Html5QrcodeSupportedFormats,o={verbose:false,formatsToSupport:[F.CODE_128,F.EAN_13,F.QR_CODE],experimentalFeatures:{useBarCodeDetectorIfSupported:true}};
  const cfg={fps:30,disableFlip:true,qrbox:(w,h)=>({width:Math.floor(w*.92),height:Math.floor(h*.42)})};
+ /* libera a trava mesmo quando a biblioteca não devolve nada (etiqueta afastada) */
+ const tique=setInterval(()=>{travaQuadroLimpo();travaVerificar()},120);
  let q=new Html5Qrcode("cam",o);
  try{await q.start({facingMode:"environment"},{...cfg,videoConstraints:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}},dedupe,()=>{})}
  catch(e){try{await q.clear()}catch(x){}
@@ -1973,8 +2005,11 @@ async function startLib(box){
   if(v2){v2.style.transformOrigin="50% 50%";v2.style.transform=falta>1.01?("scale("+falta+")"):""}
   return{nativo:nat,falta};
  };
+ /* guarda o stop original e acrescenta a parada do tique (senão ele fica rodando para sempre) */
+ q.mdoParar=q.stop;
+ q.stop=async function(){clearInterval(tique);return q.mdoParar()};
  return q}
-$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;
+$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;TRAVA.cod="";TRAVA.limpos=0;travaSoltar();
  const t0=(window.performance&&performance.now)?performance.now():Date.now();
  if(sc)return camOff();
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}

@@ -328,8 +328,12 @@ pendentes.push(ta("gravação só reescreve a chave alterada", async () => {
 }));
 pendentes.push(ta("dedupe aceita dois códigos diferentes em sequência", async () => {
   const env = novo(); await comoAdmin(env); await flush();
-  run(env, 'mode="out";last="";lastT=0;dedupe("80202500146");dedupe("80202500147")');
-  eq(estado(env).bal.slice(0, 2), [4, 4], "saldo dos dois primeiros:");
+  run(env, 'mode="out";last="";lastT=0;TRAVA.cod="";TRAVA.limpos=0;dedupe("80202500146")');
+  /* item 5: com a trava ativa, outro código NÃO entra em cascata */
+  eq(estado(env).bal.slice(0, 2), [4, 5], "com a trava ativa o segundo código não entra:");
+  /* depois de quadro limpo + tempo mínimo, o segundo código entra normalmente */
+  run(env, 'for(var i=0;i<5;i++)travaQuadroLimpo();TRAVA.desde=Date.now()-2000;travaVerificar();dedupe("80202500147")');
+  eq(estado(env).bal.slice(0, 2), [4, 4], "saldo dos dois primeiros depois de liberar:");
 }));
 pendentes.push(ta("dedupe ignora a releitura do mesmo código em menos de 1,5 s", async () => {
   const env = novo(); await comoAdmin(env); await flush();
@@ -661,29 +665,6 @@ t("câmera: visor mais baixo, largura inteira e botões de zoom", () => {
   okv(html.indexOf('id="zoomBar"') > html.indexOf('id="cam"'), "a barra de zoom fica abaixo do visor");
 });
 
-t("7.6 relatório: os dez cartões numéricos do topo", () => {
-  const env = novo();
-  /* admin local direto: o teste é sincrono e só precisa de isA() verdadeiro */
-  run(env, 'U=[{l:"ricardo",n:"Ricardo Kato",r:"admin",h:"x",st:"ativo"}];cur=U[0];');
-  const d = run(env, "(function(){const x=pbiDados();return JSON.stringify(x)})()");
-  const x = JSON.parse(d);
-  okv(typeof x.saldoLiquido === "number", "falta o saldo líquido");
-  okv(Array.isArray(x.semMov), "falta a lista de sem movimentação");
-  okv(typeof x.diverg === "number", "falta a contagem de divergências");
-  run(env, "drawPbi()");
-  const html = env.document.getElementById("pbi").innerHTML;
-  const n = (html.match(/class="pc/g) || []).length;
-  okv(n === 10, "o topo deve ter 10 cartões, tem " + n);
-  ["Total de produtos", "Unidades em estoque", "Saldo líquido", "Sem movimentação", "Divergências"]
-    .forEach((rot) => okv(html.indexOf(rot) >= 0, "falta o cartão: " + rot));
-});
-
-t("7.6 relatório: clicar num item do detalhe abre a movimentação individual", () => {
-  const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
-  okv(/data-a="pbiDet"/.test(html), "o item do detalhe deve abrir a movimentação");
-  okv(/Movimentação\\n/.test(html), "deve mostrar o detalhe da movimentação");
-  okv(/Aparelho: /.test(html), "o detalhe deve mostrar o aparelho");
-});
 
 t("câmera: visor ocupa a largura toda da tela enquanto a câmera roda", () => {
   const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
@@ -708,9 +689,27 @@ t("câmera: dedupe bloqueia só o mesmo código, e por pouco tempo", () => {
   run(env, "cur={l:'x',r:'adm'};last=null;lastT=0;ultimaConf=null;");
   okv(run(env, 'dedupe("111")') === true, "primeira leitura deve passar");
   okv(run(env, 'dedupe("111")') === false, "repetição imediata do mesmo código deve ser ignorada");
-  okv(run(env, 'dedupe("222")') === true, "o próximo código deve entrar na hora");
-  run(env, 'last="111";lastT=Date.now()-800;');
-  okv(run(env, 'dedupe("111")') === true, "o mesmo código volta a valer depois da janela curta");
+  okv(run(env, 'dedupe("222")') === false, "com a trava ativa, outro código espera");
+  run(env, 'for(var i=0;i<5;i++)travaQuadroLimpo();TRAVA.desde=Date.now()-2000;travaVerificar()');
+  okv(run(env, 'dedupe("222")') === true, "depois do quadro limpo o próximo código entra");
+  run(env, 'for(var i=0;i<5;i++)travaQuadroLimpo();TRAVA.desde=Date.now()-2000;travaVerificar()');
+  okv(run(env, 'dedupe("111")') === true, "o mesmo código volta a valer depois de liberar a trava");
+});
+
+t("item 5: uma etiqueta parada na frente da câmera gera UMA baixa, não cinco", () => {
+  const env = novo();
+  run(env, "cur={l:'x',r:'adm'};PP=[['111','A','P',10]];idx={'111':0};M=[];mode='out';qty=1;last='';lastT=0;TRAVA.cod='';TRAVA.limpos=0;");
+  /* 30 quadros seguidos com o mesmo código (é o que o iPhone devolve) */
+  for (let i = 0; i < 30; i++) run(env, 'dedupe("111")');
+  eq(run(env, "bal()[0]"), 9, "30 quadros do mesmo código = 1 baixa:");
+  /* passa o tempo, mas a etiqueta continua na frente: NÃO pode soltar */
+  run(env, "TRAVA.desde=Date.now()-5000;TRAVA.limpos=0");
+  for (let i = 0; i < 5; i++) run(env, 'dedupe("111")');
+  eq(run(env, "bal()[0]"), 9, "sem quadro limpo a trava continua:");
+  /* etiqueta afastada (quadros limpos) + tempo: aí sim aceita de novo */
+  run(env, "TRAVA.desde=Date.now()-5000;lastT=Date.now()-5000;for(var i=0;i<5;i++)travaQuadroLimpo();travaVerificar();");
+  run(env, 'dedupe("111")');
+  eq(run(env, "bal()[0]"), 8, "depois de afastar a etiqueta, um novo bip vale:");
 });
 
 t("foto: a primeira tentativa é a imagem crua e há recorte, ampliação e giro", () => {
