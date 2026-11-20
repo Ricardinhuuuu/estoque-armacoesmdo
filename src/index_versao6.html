@@ -1568,7 +1568,8 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  let h=admGrupo();
  if(admMostra("dia"))h+='<div class="card" data-bloco="dia"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
  if(admMostra("estoque"))h+='<div class="card" data-bloco="estoque"><h3>⚠ Abaixo do mínimo ('+low.length+')</h3>'+low.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+'<div class="mu">Toque num produto da aba Estoque para definir o mínimo.</div>'+(low.length?'<button type="button" class="btn ghost" data-a="wa">📲 Enviar alerta pelo WhatsApp</button>':'')+'</div>';
- if(admMostra("pessoas"))h+='<div class="card" data-bloco="pessoas"><h3>👥 Usuários</h3>'+U.map((u,i)=>{const st=u.st==="bloq"?" · bloqueado":u.st==="desat"?" · desativado":u.temp?" · troca de senha pendente":"";
+ if(admMostra("pessoas"))h+='<div class="card" data-bloco="pessoas"><h3>👥 Usuários</h3>'+
+  (contasAtivas()?'<div class="mu" style="margin-bottom:6px">🔒 Sincronização ligada: senha, papel, bloqueio e desativação são decididos pelo <b>servidor</b>. Os botões abaixo agem lá.</div>':'<div class="mu" style="margin-bottom:6px">📴 Modo local: as contas valem só neste aparelho. Configure a sincronização em Admin › Sistema para valer em todos.</div>')+U.map((u,i)=>{const st=u.st==="bloq"?" · bloqueado":u.st==="desat"?" · desativado":u.temp?" · troca de senha pendente":"";
   return'<div class="item"><span><b>'+esc(u.n)+'</b><span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+st+'</span></span><span><button type="button" class="pill" data-a="pw" data-i="'+i+'">Senha</button> '+(u.st==="bloq"?'<button type="button" class="pill" data-a="ub" data-i="'+i+'">Desbloquear</button> ':'')+(u.st!=="desat"&&u.l!==cur.l?'<button type="button" class="pill n" data-a="du" data-i="'+i+'">Desativar</button> ':'')+(u.st==="desat"?'<button type="button" class="pill" data-a="ua" data-i="'+i+'">Reativar</button>':'')+'</span></div>'}).join("")+
  '<input class="in" id="nuN" placeholder="Nome completo" autocomplete="name"><input class="in" id="nuL" placeholder="Login" autocapitalize="none"><input class="in" id="nuP" type="password" placeholder="Senha provisória (mín. 6)"><select class="in" id="nuR"><option value="op">Operador</option><option value="admin">Administrador</option></select><button type="button" class="btn" data-a="au">+ Criar usuário</button></div>';
  if(admMostra("estoque"))h+='<div class="card" data-bloco="estoque"><h3>📦 Inventário</h3><div class="mu">'+(INV.ativo?'Em andamento · responsável: '+esc(INV.resp)+' · '+Object.keys(INV.itens||{}).length+' produto(s) contado(s)':'Nenhum inventário em andamento.')+'</div>'+
@@ -1690,19 +1691,66 @@ async function act(a,i){
  else if(a==="no"){const r=REQ[i];REQ.splice(i,1);sR();audit("RECUSA",r?r.c:"",r?r.q+" un.":"")}
  else if(a==="wa"){const b=bal(),t="⚠ Estoque baixo (MDO):\n"+PP.map((p,k)=>[p,b[k]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]).map(([p,v])=>"• "+p[1]+" "+p[2]+": "+v+" (mín. "+MIN[p[0]]+")").join("\n");window.open("https://wa.me/?text="+encodeURIComponent(t),"_blank");return}
  else if(a==="pw"){const u=U[i];if(!u)return;
+  /* ETAPA 2 — com servidor, a senha provisória é definida lá (o aparelho não guarda senha) */
+  if(contasAtivas()){
+   if(!sessValida())return alert("Entre novamente como administrador para trocar senhas no servidor.");
+   if(!confirm("Definir uma senha provisória no SERVIDOR para "+u.n+"? Ele será obrigado a trocá-la ao entrar."))return;
+   apiContas("senhaProvisoria",{login:u.l}).then(j=>{
+    if(!j.ok)return alert(j.erro||"Não foi possível definir a senha.");
+    u.temp=j.senhaProvisoria||true;u.st="ativo";u.t=0;sU();audit("SENHA PROVISÓRIA",u.l,"servidor");
+    alert("Senha provisória de "+u.l+": "+(j.senhaProvisoria||"(veja no servidor)")+"\nEle será obrigado a trocá-la ao entrar.");
+    act("ctListar");
+   }).catch(e=>alert((e&&e.message)||"Sem conexão com o servidor."));
+   return;
+  }
   const p=prompt("Senha provisória para "+u.n+" (mín. 6). O operador troca no próximo acesso:",sugerirSenha());
   if(p===null)return;if(p.length<6)return alert("A senha provisória precisa ter pelo menos 6 caracteres.");
   u.h=await H(u.l+p);u.temp=p;u.t=0;u.st="ativo";sU();audit("SENHA PROVISÓRIA",u.l);alert("Senha provisória definida. O operador será obrigado a trocá-la ao entrar.");draw();return}
- else if(a==="ub"){const u=U[i];if(!u)return;u.st="ativo";u.t=0;sU();audit("DESBLOQUEIO",u.l)}
- else if(a==="du"){const u=U[i];if(!u||u.l===cur.l)return;
-  if(confirm("Desativar o usuário "+u.n+"? (o histórico dele é mantido)")){u.st="desat";sU();audit("DESATIVAÇÃO",u.l)}}
- else if(a==="ua"){const u=U[i];if(!u)return;u.st="ativo";u.t=0;sU();audit("REATIVAÇÃO",u.l)}
+ else if(a==="ub"||a==="du"||a==="ua"){
+  const u=U[i];if(!u)return;
+  if(a==="du"&&u.l===cur.l)return;
+  /* ETAPA 2 — com servidor, bloqueio e desativação são decididos lá */
+  if(contasAtivas()){
+   if(!sessValida())return alert("Entre novamente como administrador para administrar contas no servidor.");
+   const mapa={ub:"desbloquear",du:"desativar",ua:"reativar"};
+   const nomes={ub:"Desbloquear",du:"Desativar",ua:"Reativar"};
+   if(!confirm(nomes[a]+" a conta de "+u.n+" no SERVIDOR?"))return;
+   try{
+    const j=await apiContas(mapa[a],{login:u.l});
+    if(!j.ok)return alert(j.erro||"Não foi possível.");
+    u.st=a==="ub"||a==="ua"?"ativo":"desat";if(a!=="du")u.t=0;sU();
+    audit(mapa[a].toUpperCase(),u.l,"servidor");
+    act("ctListar");
+   }catch(e){alert((e&&e.message)||"Sem conexão com o servidor.")}
+   return;
+  }
+  if(a==="ub"){u.st="ativo";u.t=0;sU();audit("DESBLOQUEIO",u.l)}
+  else if(a==="du"){if(confirm("Desativar o usuário "+u.n+"? (o histórico dele é mantido)")){u.st="desat";sU();audit("DESATIVAÇÃO",u.l)}}
+  else {u.st="ativo";u.t=0;sU();audit("REATIVAÇÃO",u.l)}
+ }
  else if(a==="au"){(async()=>{const n=$("nuN").value.trim(),l=$("nuL").value.trim().toLowerCase(),p=$("nuP").value;
    if(!nomeOK(n))return alert("Digite nome e sobrenome");
    if(!l||/\s/.test(l))return alert("Login obrigatório, sem espaços.");
    if(p.length<6)return alert("A senha provisória precisa ter pelo menos 6 caracteres.");
    if(U.some(x=>x.l===l))return alert("Esse login já existe.");
-   U.push({l,n,r:$("nuR").value,h:await H(l+p),temp:p,st:"ativo",ts:Date.now()});sU();audit("CADASTRO",l,$("nuR").value);draw()})();return}
+   const papel=$("nuR").value==="admin"?"admin":"operador";
+   /* ETAPA 2 — com servidor, quem cria a conta é o servidor (papel e senha decididos lá) */
+   if(contasAtivas()){
+    if(!sessValida())return alert("Entre novamente como administrador para criar contas no servidor.");
+    /* trava para o toque duplo não criar duas contas (ou tentar de novo depois de criada) */
+   if(window.__criandoConta)return;
+   window.__criandoConta=true;
+   try{
+    const j=await apiContas("criar",{login:l,nome:n,senha:p,papel});
+    if(!j.ok)return alert(j.erro||"Não foi possível criar a conta.");
+    if(!U.some(x=>x.l===l)){U.push(Object.assign({h:"(servidor)",st:"ativo"},j.usuario||{l,n,r:papel}));sU()}
+    audit("CADASTRO",l,papel+" (servidor)");
+    alert("Conta criada no servidor. Passe a senha provisória: "+p+"\n"+n+" será obrigado a trocá-la no primeiro acesso.");
+    return draw();
+   }catch(e){return alert((e&&e.message)||"Sem conexão com o servidor.")}
+   finally{window.__criandoConta=false}
+   }
+   U.push({l,n,r:papel,h:await H(l+p),temp:p,st:"ativo",ts:Date.now()});sU();audit("CADASTRO",l,papel);draw()})();return}
  else if(a==="cm"){const c=i;if(CNT[c]==null)return;CNT[c].q=Math.max(0,(CNT[c].q||0)-1);if(!CNT[c].q)delete CNT[c];sC()}
  else if(a==="ap"){if(!confirm("Aplicar a contagem como ajuste de estoque?"))return;
   const b=bal();let n=0,desc=0;Object.keys(CNT).forEach(c=>{const k=idx[c];if(k==null){desc++;return}const d=CNT[c].q-b[k];if(d){reg("adj",c,d,{obs:"Inventário"});n++}});
