@@ -273,6 +273,7 @@ function enter(l){
  cur=U.find(x=>x.l===l);if(!cur)return showLogin();
  sv(K.s,l);$("lg").style.display="none";$("lgP").value="";
  $("who").textContent="👤 "+cur.n+(isA()?" · Administrador":" · Operador");$("tAdm").style.display=isA()?"":"none";
+ try{ajustarBotoesPorPapel()}catch(e){}   /* ETAPA 2: contagem só para administrador */
  const d=new Date().toISOString().slice(0,10),antes=ls(K.abd,"");
  if(isA()&&ls(K.ab,true)){if(antes!==d){sP("abd",d);backup()}}
  else if(isA()&&antes!==d)sP("abd",d);
@@ -1822,7 +1823,20 @@ $("imp").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)re
  catch(x){alert("Não consegui ler a planilha.")}};
 
 /* ===== Controles ===== */
-function mode_(m){mode=m;$("mO").classList.toggle("on",m==="out");$("mI").classList.toggle("on",m==="in");$("mC").classList.toggle("on",m==="cnt")}
+/* ETAPA 2 — contagem é do administrador; baixa e entrada são de todos */
+function podeContar(){return isA()}
+function mode_(m){
+ /* quem não pode contar não entra no modo contagem, nem por engano */
+ if(m==="cnt"&&!podeContar()){toast("A contagem de inventário é do administrador.",true);m="out"}
+ mode=m;
+ $("mO").classList.toggle("on",m==="out");$("mI").classList.toggle("on",m==="in");$("mC").classList.toggle("on",m==="cnt")
+}
+/* mostra ou esconde o botão de contagem conforme o papel (chamado ao entrar e a cada desenho) */
+function ajustarBotoesPorPapel(){
+ const c=$("mC");if(!c)return;
+ c.style.display=podeContar()?"":"none";
+ if(!podeContar()&&mode==="cnt")mode_("out");
+}
 $("mO").onclick=()=>mode_("out");$("mI").onclick=()=>mode_("in");$("mC").onclick=()=>mode_("cnt");
 $("qm").onclick=()=>{qty=Math.max(1,qty-1);$("qv").textContent=qty};$("qp").onclick=()=>{qty++;$("qv").textContent=qty};
 $("go").onclick=()=>{initAudio();const v=$("man").value;$("man").value="";$("man").focus();last="";scan(v)};
