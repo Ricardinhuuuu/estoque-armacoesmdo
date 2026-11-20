@@ -545,18 +545,16 @@ t("visor: o mesmo tamanho no Android e no iPhone (4:3 fixo, vídeo em cover)", (
      return {aspect:box.style.aspectRatio,maxH:box.style.maxHeight,fit:video.style.objectFit};
    }`);
   /* os três formatos que os aparelhos realmente entregam */
-  const iphone = run(env, "caixaFalsa(1280,720)");     /* iPhone: paisagem 16:9 */
-  const android = run(env, "caixaFalsa(640,480)");     /* Android: 4:3 */
-  eq(iphone.aspect, "4/3", "iPhone em 4:3:");
-  eq(android.aspect, "4/3", "Android em 4:3:");
-  eq(iphone.aspect, android.aspect, "os dois têm de ter a MESMA proporção de visor:");
-  eq(iphone.maxH, android.maxH, "e a mesma altura máxima:");
-  eq(iphone.fit, "cover", "o vídeo do iPhone preenche a caixa:");
-  eq(android.fit, "cover", "o vídeo do Android preenche a caixa:");
-  /* quadro em pé (alguns Androids entregam assim) vira 3:4, o resto é igual */
+  /* o padrão é o do iPhone: 16:9, baixo. O Android (4:3 ou em pé) tem de ficar IGUAL. */
+  const iphone = run(env, "caixaFalsa(1280,720)");
+  const android = run(env, "caixaFalsa(640,480)");
   const pe = run(env, "caixaFalsa(720,1280)");
-  eq(pe.aspect, "3/4", "quadro em pé usa 3:4:");
-  eq(pe.maxH, iphone.maxH, "e a mesma altura máxima:");
+  for (const [nome, x] of [["iPhone 16:9", iphone], ["Android 4:3", android], ["Android em pé", pe]]) {
+    eq(x.aspect, "16/9", nome + " em 16:9:");
+    eq(x.maxH, "34vh", nome + " com a mesma altura máxima:");
+    eq(x.fit, "cover", nome + " preenchendo a caixa:");
+  }
+  okv(fs.readFileSync(HTML, "utf8").includes("aspect-ratio:16/9"), "o CSS do visor tem de ser 16:9");
 });
 
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
@@ -790,13 +788,15 @@ t("2.6 produto não cadastrado mostra aviso e nada muda", () =>
 t("câmera: visor mais baixo, largura inteira e botões de zoom", () => {
   const env = novo();
   const html = fs.readFileSync(require("path").join(__dirname, "..", "index.html"), "utf8");
-  const css = html.match(/#cam\{[^}]*\}/)[0];
-  /* o visor segue a proporcao 4:3 do iPhone (era 16:9 fixo, que gerava tarjas pretas) */
-  okv(/aspect-ratio:4\/3/.test(css), "visor deve seguir a proporcao 4:3: " + css);
-  okv(/object-fit:contain/.test(html), "sem cortar a imagem");
-  okv(!/aspect-ratio:16\/9|aspectRatio:1\.777/.test(html), "nao pode voltar a forcar 16:9");
+  /* a regra base do visor e a do modo camera (body.camLarga #cam) */
+  const css = html.match(/body\.camLarga #cam\{[^}]*\}/)[0] + html.match(/#cam\{[^}]*\}/)[0];
+  /* Decisao do dono do app (tela do Android, 08/2025): o visor estava ALTO demais.
+     O padrao passou a ser o do iPhone: caixa 16:9, baixa, video em cover. Antes este teste
+     exigia 4:3 + contain — mudou de proposito, e o motivo esta aqui.                      */
+  okv(/aspect-ratio:16\/9/.test(css), "visor deve ser 16:9 (padrao do iPhone): " + css);
+  okv(/object-fit:cover/.test(html), "o video preenche a caixa (cover)");
+  okv(/max-height:34vh/.test(css), "altura maxima do visor tem de ser baixa (34vh)");
   okv(/width:100%/.test(css) && /max-width:100%/.test(css), "largura deve continuar inteira");
-  okv(/object-fit:contain/.test(html), "imagem inteira dentro do visor");
   okv(/data-z="1"/.test(html) && /data-z="6"/.test(html), "faltam os botões rápidos de zoom");
   okv(/id="zoomR"/.test(html), "falta o controle deslizante de zoom");
   okv(html.indexOf('id="zoomBar"') > html.indexOf('id="cam"'), "a barra de zoom fica abaixo do visor");
