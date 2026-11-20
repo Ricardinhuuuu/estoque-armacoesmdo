@@ -484,9 +484,15 @@ function confirmar(ids){
  sF();syncStatus();
 }
 /* envia o lote; devolve o resultado do servidor */
+/* ETAPA 3 — manda o catálogo junto com as movimentações: o servidor precisa conhecer o produto
+   antes de aceitar a baixa dele. Vai só o necessário (código, descrição, cor, saldo inicial). */
+function produtosParaServidor(){
+ return PP.map(p=>[p[0],p[1],p[2],Number(p[3])||0])
+  .map(a=>({codigo:String(a[0]),descricao:String(a[1]||a[0]),cor:String(a[2]||""),inicial:Number(a[3])||0}));
+}
 async function enviarLote(movs){
  const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/movimentos",{
-  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs})});
+  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs,produtos:produtosParaServidor()})});
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
  return j;
@@ -501,8 +507,27 @@ async function receberNovidades(){
   if(M.some(x=>x.id===m.id))return;
   M.push(m);novos++;
  });
+ /* ETAPA 3 — os PRODUTOS que o servidor devolve eram jogados fora.
+    Quem só bipa (operador) nunca cadastra produto: sem isso o catálogo dele ficava vazio e a
+    bipagem dava "código não encontrado" mesmo com o produto existindo no servidor. */
+ const novosProdutos=juntarProdutosDoServidor(j.produtos||[]);
  if(novos){sM();reidx()}
  SYNC.desde=j.servidorEm||SYNC.desde;sS();
+ return novos+(novosProdutos?1000:0);   /* 1000 = sinaliza "chegou produto novo" para quem conta */
+}
+/* ETAPA 3 — junta os produtos do servidor sem duplicar e sem mexer no que já existe aqui.
+   Produto local é preservado (pode ter baixa pendente que o servidor ainda não viu).
+   Só entra o que ainda não está no cadastro, pelo código normalizado.                        */
+function juntarProdutosDoServidor(lista){
+ let novos=0;
+ (lista||[]).forEach(p=>{
+  const c=normCode(p.codigo);if(!c)return;
+  if(idx[c]!=null)return;                      /* já existe: não duplica, não sobrescreve */
+  if(PP.some(x=>normCode(x[0])===c))return;
+  PP.push([c,String(p.descricao||p.nome||c),String(p.cor||""),Number(p.inicial)||0]);
+  novos++;
+ });
+ if(novos){sP("p");reidx()}
  return novos;
 }
 /* sincronização completa: envia pendentes e depois busca novidades */
