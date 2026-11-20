@@ -438,6 +438,19 @@ t("1.3 leitura contínua a ~25-30 tentativas por segundo", () => {
   okv(html.includes("width:{ideal:1280},height:{ideal:720}"), "resolução de referência não é 1280x720");
   okv(html.includes("height:Math.floor(h*.42)"), "área de leitura não está larga (42% da altura)");
 });
+t("etapa 2: escolher um bloco mostra so o que e daquele assunto", () => {
+  const env = novo();
+  run(env, 'ADMABA=null;localStorage.removeItem("mdo_admbl")');
+  eq(run(env, "admBloco()"), "todos", "o padrão deve ser mostrar tudo:");
+  okv(run(env, 'admMostra("sistema")') === true, "com 'todos' tudo aparece");
+  /* escolher um bloco esconde os cartões dos outros assuntos */
+  run(env, 'ADMABA="registro"');
+  okv(run(env, 'admMostra("registro")') === true, "o bloco escolhido aparece");
+  okv(run(env, 'admMostra("pessoas")') === false, "os outros blocos somem");
+  /* o bloco escolhido não pode se perder ao redesenhar a tela */
+  okv(run(env, 'ADMABA="estoque",admBloco()') === "estoque", "o bloco escolhido tem de sobreviver ao redesenho");
+});
+
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
   const env = novo();
   const html = fs.readFileSync(HTML, "utf8");
