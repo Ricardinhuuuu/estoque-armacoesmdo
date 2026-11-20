@@ -535,6 +535,30 @@ t("etapa 3: o inicial enviado ao servidor é o estado antes dos movimentos (não
   eq(Object.fromEntries(r2.saldos).P1, 8, "mais uma baixa de 2:");
 });
 
+t("visor: o mesmo tamanho no Android e no iPhone (4:3 fixo, vídeo em cover)", () => {
+  const env = novo();
+  run(env, `
+   function caixaFalsa(w,hh){
+     const video={videoWidth:w,videoHeight:hh,style:{}};
+     const box={style:{},querySelector:()=>video};
+     ajustarProporcao(box);
+     return {aspect:box.style.aspectRatio,maxH:box.style.maxHeight,fit:video.style.objectFit};
+   }`);
+  /* os três formatos que os aparelhos realmente entregam */
+  const iphone = run(env, "caixaFalsa(1280,720)");     /* iPhone: paisagem 16:9 */
+  const android = run(env, "caixaFalsa(640,480)");     /* Android: 4:3 */
+  eq(iphone.aspect, "4/3", "iPhone em 4:3:");
+  eq(android.aspect, "4/3", "Android em 4:3:");
+  eq(iphone.aspect, android.aspect, "os dois têm de ter a MESMA proporção de visor:");
+  eq(iphone.maxH, android.maxH, "e a mesma altura máxima:");
+  eq(iphone.fit, "cover", "o vídeo do iPhone preenche a caixa:");
+  eq(android.fit, "cover", "o vídeo do Android preenche a caixa:");
+  /* quadro em pé (alguns Androids entregam assim) vira 3:4, o resto é igual */
+  const pe = run(env, "caixaFalsa(720,1280)");
+  eq(pe.aspect, "3/4", "quadro em pé usa 3:4:");
+  eq(pe.maxH, iphone.maxH, "e a mesma altura máxima:");
+});
+
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
   const env = novo();
   const html = fs.readFileSync(HTML, "utf8");
