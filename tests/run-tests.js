@@ -438,13 +438,12 @@ t("1.3 leitura contínua a ~25-30 tentativas por segundo", () => {
   okv(html.includes("width:{ideal:1280},height:{ideal:720}"), "resolução de referência não é 1280x720");
   okv(html.includes("height:Math.floor(h*.42)"), "área de leitura não está larga (42% da altura)");
 });
-t("1.5 zoom padrão de 3,4x existe e é aplicado ao abrir", () => {
+t("item 3: o zoom de abertura é 1x e a barra continua aplicando zoom", () => {
   const env = novo();
-  eq(run(env, "ZOOM"), 3.4, "constante de zoom:");
+  eq(run(env, "ZOOM"), 1, "zoom de abertura (sem ampliação):");
   const html = fs.readFileSync(HTML, "utf8");
-  okv(html.includes("await aplicarZoom(stream,box)"), "startNative não aplica zoom");
-  okv(html.includes("aplicarZoom(src,box)") || html.includes("zoom:Math.min(ZOOM,max)"), "startLib não aplica zoom");
-  okv(html.includes("v.style.transform=\"scale(\"+ZOOM+\")\"") || html.includes("scale(\"+ZOOM+\")\""), "falta ampliação digital de reserva");
+  okv(html.includes("await aplicarZoom(stream,box)"), "startNative não aplica o zoom da barra");
+  okv(!html.includes("const ZOOM=3.4"), "o 3,4x de abertura deveria ter saído");
 });
 t("1.5 zoom usa o máximo do aparelho quando ele não chega a 3,4x", () => {
   const env = novo();
@@ -453,6 +452,7 @@ t("1.5 zoom usa o máximo do aparelho quando ele não chega a 3,4x", () => {
     const track={getCapabilities:()=>({zoom:{min:1,max:2}}),applyConstraints:async c=>chamadas.push(c)};
     const v=document.createElement("video");v.style.cssText="";
     const box=document.createElement("div");box.appendChild(v);
+    ZOOMATUAL=3.4;                       /* pedido de 3,4x na barra */
     const z=await aplicarZoom({getVideoTracks:()=>[track]},box);
     return {z,chamadas,transform:v.style.transform};
   })()`);
@@ -468,6 +468,7 @@ t("1.5 sem zoom de câmera cai para ampliação digital e avisa", () => {
     const track={getCapabilities:()=>({}),applyConstraints:async()=>{}};
     const v=document.createElement("video");
     const box=document.createElement("div");box.appendChild(v);
+    ZOOMATUAL=3.4;                       /* pedido de 3,4x na barra */
     const z=await aplicarZoom({getVideoTracks:()=>[track]},box);
     return {z,transform:v.style.transform,aviso:document.getElementById("camMsg").dataset.zoom||""};
   })()`).then(({ z, transform, aviso }) => {
@@ -694,6 +695,32 @@ t("câmera: dedupe bloqueia só o mesmo código, e por pouco tempo", () => {
   okv(run(env, 'dedupe("222")') === true, "depois do quadro limpo o próximo código entra");
   run(env, 'for(var i=0;i<5;i++)travaQuadroLimpo();TRAVA.desde=Date.now()-2000;travaVerificar()');
   okv(run(env, 'dedupe("111")') === true, "o mesmo código volta a valer depois de liberar a trava");
+});
+
+t("item 3: a câmera abre SEM zoom forçado (1x) e não guarda o zoom entre aberturas", () => {
+  const env = novo();
+  run(env, "localStorage.setItem('mdo_zoom','3.4')");   /* zoom salvo por versão antiga */
+  const e2 = novo();
+  eq(run(e2, "ZOOM"), 1, "zoom de abertura:");
+  eq(run(e2, "ZOOMATUAL"), 1, "zoom atual ao abrir:");
+  run(e2, "zoomAplicar(3)");
+  eq(run(e2, "localStorage.getItem('mdo_zoom')"), null, "o zoom não fica salvo:");
+});
+
+t("item 4: a lanterna só aparece quando o aparelho suporta e avisa quando não", async () => {
+  const env = novo(); await comoAdmin(env); await esperar(env, "!!cur");
+  /* aparelho sem suporte (iPhone/Safari): botão escondido e aviso em vez de fingir */
+  run(env, "torchBotao()");
+  eq(run(env, '$("torchBtn").style.display'), "none", "sem suporte o botão fica escondido:");
+  eq(await run(env, "torchAplicar(true)"), false, "sem suporte não liga:");
+  /* aparelho com suporte: liga e desliga de verdade na trilha */
+  run(env, 'window.__ligado=false;window.__trilhaFalsa={getCapabilities:()=>({torch:true}),applyConstraints:async(c)=>{window.__ligado=c.advanced[0].torch}};torchTrilha=function(){return window.__trilhaFalsa};torchBotao()');
+  okv(run(env, '$("torchBtn").style.display') !== "none", "com suporte o botão aparece");
+  await run(env, "torchAlternar()");
+  eq(run(env, "window.__ligado"), true, "ligou a lanterna:");
+  okv(run(env, '$("torchBtn").classList.contains("at")'), "o botão mostra que está ligada");
+  await run(env, "torchAlternar()");
+  eq(run(env, "window.__ligado"), false, "desligou a lanterna:");
 });
 
 t("item 5: uma etiqueta parada na frente da câmera gera UMA baixa, não cinco", () => {
