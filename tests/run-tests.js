@@ -487,6 +487,35 @@ t("etapa 2: contagem é só do administrador; baixa e entrada são de todos", as
   run(env, 'mode_("in")');  eq(run(env, "mode"), "in", "operador usa a entrada:");
 });
 
+t("etapa 3: o catálogo acompanha as movimentações e o servidor o conhece antes de validar", () => {
+  const env = novo();
+  const html = fs.readFileSync(HTML, "utf8");
+  /* o lote precisa levar o catálogo, senão o servidor recusa tudo com "produto não cadastrado" */
+  okv(html.includes("produtos:produtosParaServidor()"), "o lote não envia o catálogo");
+  okv(html.includes("function produtosParaServidor"), "falta montar o catálogo para o servidor");
+  /* e o que o servidor devolve precisa ser aproveitado */
+  okv(html.includes("function juntarProdutosDoServidor"), "falta juntar os produtos que vêm do servidor");
+  okv(html.includes("juntarProdutosDoServidor(j.produtos"), "receberNovidades ignora os produtos");
+  /* o servidor cadastra o catálogo do lote antes de validar */
+  const api = fs.readFileSync(require("path").join(__dirname, "..", "api", "movimentos.js"), "utf8");
+  okv(api.includes("cadastrarProdutosDoLote"), "o servidor não cadastra os produtos do lote");
+  okv(/cadastrarProdutosDoLote\(db, corpo\.produtos\)/.test(api), "o servidor não chama o cadastro do lote");
+  /* a ORDEM importa: gravar o catálogo, depois carregar para validar (a definição da função
+     aparece antes no arquivo, então comparamos a chamada, não o nome) */
+  const chamadaCadastro = api.indexOf("= await cadastrarProdutosDoLote(db, corpo.produtos)");
+  const chamadaCarga = api.indexOf("= await carregarProdutos(db)");
+  okv(chamadaCadastro > 0 && chamadaCarga > 0 && chamadaCadastro < chamadaCarga,
+    "os produtos precisam ser gravados ANTES de carregar para validar");
+  okv(api.includes("on conflict (codigo) do nothing"), "produto existente não pode ser sobrescrito");
+  /* juntar produtos: não duplica e não sobrescreve o que já existe */
+  run(env, "PP=[['111','Modelo A','Preto',10]];reidx()");
+  const novos = run(env, 'juntarProdutosDoServidor([{codigo:"111",descricao:"Outro",cor:"X",inicial:99},{codigo:"222",descricao:"Modelo B",cor:"Azul",inicial:5}])');
+  eq(novos, 1, "só o produto novo deve entrar:");
+  eq(run(env, "PP.length"), 2, "sem duplicar:");
+  eq(run(env, "PP[0][1]"), "Modelo A", "o produto que já existia não é sobrescrito:");
+  eq(run(env, 'juntarProdutosDoServidor([{codigo:"222",descricao:"Modelo B",cor:"Azul",inicial:5}])'), 0, "rodar de novo não duplica:");
+});
+
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
   const env = novo();
   const html = fs.readFileSync(HTML, "utf8");
