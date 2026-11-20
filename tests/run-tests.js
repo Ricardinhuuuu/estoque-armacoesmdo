@@ -468,6 +468,25 @@ t("etapa 2: com servidor ligado, as ações de usuário vão para a API (não s�
   okv(html.includes("__criandoConta"), "falta a trava de toque duplo ao criar conta");
 });
 
+t("etapa 2: contagem é só do administrador; baixa e entrada são de todos", async () => {
+  const env = novo(); await comoAdmin(env); await esperar(env, "!!cur");
+  okv(run(env, "isA()"), "o teste precisa começar como administrador");
+  eq(run(env, "podeContar()"), true, "administrador pode contar:");
+  run(env, "ajustarBotoesPorPapel()");
+  okv(run(env, '$("mC").style.display') !== "none", "o botão de contagem aparece para o administrador");
+  /* agora como operador */
+  run(env, 'cur={l:"op1",n:"Operador Um",r:"operador"};mode="cnt";ajustarBotoesPorPapel()');
+  eq(run(env, "podeContar()"), false, "operador não pode contar:");
+  eq(run(env, '$("mC").style.display'), "none", "o botão de contagem some para o operador:");
+  eq(run(env, "mode"), "out", "quem não pode contar volta para a baixa:");
+  /* e não entra no modo nem chamando direto */
+  run(env, 'mode_("cnt")');
+  eq(run(env, "mode"), "out", "operador não entra no modo contagem nem direto:");
+  /* baixa e entrada continuam valendo */
+  run(env, 'mode_("out")'); eq(run(env, "mode"), "out", "operador usa a baixa:");
+  run(env, 'mode_("in")');  eq(run(env, "mode"), "in", "operador usa a entrada:");
+});
+
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
   const env = novo();
   const html = fs.readFileSync(HTML, "utf8");
