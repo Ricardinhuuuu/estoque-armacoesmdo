@@ -56,6 +56,36 @@ async function garantirTabelas(db) {
   )`);
 }
 
+/* ETAPA 3 — o aparelho manda o catálogo junto com o lote.
+   Sem isso o servidor recusava toda baixa com "produto não cadastrado": o operador não tem
+   como cadastrar produto, então a primeira bipagem dele nunca chegava ao banco.
+   Aqui os produtos novos são gravados ANTES da validação dos movimentos.
+   Produto que já existe NÃO é sobrescrito: o servidor nunca desfaz um cadastro por causa de um
+   aparelho antigo. O saldo inicial só é usado no cadastro novo.                            */
+async function cadastrarProdutosDoLote(db, produtos) {
+  if (!Array.isArray(produtos) || !produtos.length) return 0;
+  let novos = 0;
+  for (const p of produtos.slice(0, 2000)) {
+    if (!p) continue;
+    const codigo = String(p.codigo || p.c || "").trim();
+    if (!codigo) continue;
+    const descricao = String(p.descricao || p.nome || codigo).slice(0, 300);
+    const cor = String(p.cor || "").slice(0, 80);
+    const inicial = Number(p.inicial) || 0;
+    try {
+      const r = await sql(
+        db,
+        "insert into mdo_produtos (codigo, descricao, cor, inicial) values ($1,$2,$3,$4) on conflict (codigo) do nothing returning codigo",
+        [codigo, descricao, cor, Math.trunc(inicial)]
+      );
+      if ((r.rows || []).length) novos++;
+    } catch (e) {
+      /* um produto com problema não pode derrubar o lote inteiro */
+    }
+  }
+  return novos;
+}
+
 async function carregarProdutos(db) {
   const r = await sql(db, "select codigo, descricao, cor, inicial from mdo_produtos");
   return (r.rows || []).map((p) => ({ codigo: p.codigo, descricao: p.descricao, cor: p.cor, inicial: Number(p.inicial) || 0 }));
@@ -116,6 +146,8 @@ module.exports = async function handler(req, res) {
 
   try {
     await garantirTabelas(db);
+    /* ETAPA 3 — grava o catálogo que veio no lote antes de validar os movimentos */
+    const produtosNovos = await cadastrarProdutosDoLote(db, corpo.produtos);
     const produtos = await carregarProdutos(db);
     const existentes = await carregarMovimentos(db);
 
@@ -132,6 +164,7 @@ module.exports = async function handler(req, res) {
       repetidos: resultado.repetidos,
       recusados: resultado.recusados,
       saldos: Object.fromEntries(resultado.saldos),
+      produtosNovos,
       servidorEm: Date.now(),
     });
   } catch (e) {
