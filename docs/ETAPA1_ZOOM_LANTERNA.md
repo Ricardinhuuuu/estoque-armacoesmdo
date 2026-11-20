@@ -54,7 +54,7 @@ No **Android/Chrome** a lanterna funciona.
 ### Item 1 — visor acompanhando a tela
 
 Hoje o visor é `position:fixed` no topo e **cobre o conteúdo** quando o operador rola. Precisa
-seguir a rolagem e voltar ao lugar natural. Mu<span>da só CSS + o listener de scroll.
+seguir a rolagem e voltar ao lugar natural. Muda só CSS + o listener de scroll.
 
 ### Item 2 — motores de leitura (o mais fundo)
 
