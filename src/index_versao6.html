@@ -72,8 +72,11 @@ body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-rat
 /* Visor na largura toda da tela: enquanto a camera roda, o visor e a barra de zoom
    saem do cartao (que tem padding e limite de 640px) e viram uma faixa de borda a borda.
    Sem a camera, tudo volta para dentro do cartao como antes. */
-body.camLarga #camW,body.camLarga #zoomBar{position:fixed;left:0;right:0;z-index:60}
+/* ITEM 1 — o visor acompanha a rolagem em vez de ficar colado cobrindo a tela.
+   sticky: fica no topo da área da câmera enquanto o operador rola, sem sair da frente. */
+body.camLarga #camW,body.camLarga #zoomBar{position:sticky;left:0;right:0;z-index:60}
 body.camLarga #camW{top:0;padding-top:env(safe-area-inset-top)}
+body.camLarga #zoomBar{top:var(--camTop,0px)}
 body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:4/3;height:auto;max-height:46vh}
 body.camLarga #zoomBar{background:var(--card);border:0;border-bottom:1px solid var(--bd);border-radius:0;margin-top:0;padding:8px 12px}
 /* o laser acompanha o visor colado no topo */
@@ -1755,7 +1758,9 @@ $("undo").onclick=()=>{
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
 async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
  TORCH=false;{const tb=$("torchBtn");if(tb){tb.style.display="none";tb.classList.remove("at");tb.setAttribute("aria-pressed","false")}}
- document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
+ document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */
+ try{document.body.style.removeProperty("--camTop")}catch(e){}   /* item 1: limpa a medida do visor */
+ $("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 /* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
 const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
 const FMT=["code_128","ean_13","qr_code"];   /* reserva, usada quando o aparelho não diz o que suporta */
@@ -1828,8 +1833,8 @@ function ajustarProporcao(box){
   const alvo=box;
   /* proporcao entre 0.75 e 1.34 (retrato/quadrado) mantem a imagem inteira sem tarja */
   const p=Math.max(0.75,Math.min(4/3,h/w));
-  alvo.style.aspectRatio=String(1/p);   /* largura/altura */
-  alvo.style.maxHeight="56vh";
+  alvo.style.aspectRatio=String(1/p);camTopo();   /* largura/altura */
+  alvo.style.maxHeight="56vh";camTopo();
  }catch(e){}
 }
 /* confiança da última leitura feita pelo leitor nativo (null quando o leitor não informa) */
@@ -1959,6 +1964,16 @@ async function torchAplicar(ligar){
 function torchAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.torch=msg}
 function torchAlternar(){return torchAplicar(!TORCH)}
 
+/* ===== ITEM 1 — mede a altura do visor para a barra de zoom colar logo abaixo dele =====
+   Sem isso a barra ficaria por cima do vídeo enquanto o operador rola a tela. */
+function camTopo(){
+  try{
+    const w=$("camW");
+    const h=w?Math.round(w.getBoundingClientRect().height):0;
+    document.body.style.setProperty("--camTop",h+"px");
+  }catch(e){}
+}
+
 function zoomBarra(ligar){
  const b=$("zoomBar");if(!b)return;
  b.classList.toggle("on",!!ligar);
@@ -2073,6 +2088,8 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
   document.body.classList.add("camLarga");      /* visor na largura toda da tela */
   zoomBarra(true);
   TORCH=false;torchBotao();   /* item 4: mostra a lanterna só se o aparelho permitir */
+  camTopo();                  /* item 1: barra de zoom logo abaixo do visor */
+  setTimeout(camTopo,400);
   /* registra o que este aparelho realmente conseguiu */
   CAMDIAG.msAbertura=Math.round(((window.performance&&performance.now)?performance.now():Date.now())-t0);
   CAMDIAG.aparelho=camAparelho();
