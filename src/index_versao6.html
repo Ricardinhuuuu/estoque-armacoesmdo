@@ -47,7 +47,7 @@ main{padding:14px;max-width:640px;margin:0 auto}
 /* Visor em 4:3 (a proporção que o iPhone entrega de verdade). O iOS não deixa pedir paisagem:
    ele manda o vídeo em retrato, e num visor 16:9 isso viram duas tarjas pretas nas laterais.
    Em 4:3 a imagem preenche a largura inteira e não perde nada (contain, sem corte). */
-#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;aspect-ratio:4/3;height:auto;max-height:46vh}
+#cam{border-radius:14px;overflow:hidden;margin-top:10px;display:none;border:3px solid var(--b);position:relative;background:#000;width:100%;max-width:100%;aspect-ratio:16/9;height:auto;max-height:34vh}
 /* contain = imagem inteira na caixa; a caixa e 4:3, entao nao sobra tarja nas laterais */
 #cam video,#cam canvas{width:100%;height:100%;object-fit:cover;display:block}
 /* barra de zoom embaixo do visor */
@@ -80,7 +80,7 @@ body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-rat
 body.camLarga #camW,body.camLarga #zoomBar{position:sticky;left:0;right:0;z-index:60}
 body.camLarga #camW{top:0;padding-top:env(safe-area-inset-top)}
 body.camLarga #zoomBar{top:var(--camTop,0px)}
-body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:4/3;height:auto;max-height:46vh;overflow:hidden}
+body.camLarga #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:16/9;height:auto;max-height:34vh;overflow:hidden}
 body.camLarga #zoomBar{background:var(--card);border:0;border-bottom:1px solid var(--bd);border-radius:0;margin-top:0;padding:8px 12px}
 /* o laser acompanha o visor colado no topo */
 body.camLarga #gl{inset:env(safe-area-inset-top) 0 0 0;border-radius:0}
@@ -1967,9 +1967,10 @@ function ajustarProporcao(box){
      (iPhone 1280×720 = 1,78; Android 640×480 = 1,33 ou até em pé). Resultado: visor de tamanho
      diferente em cada celular. Agora a caixa é SEMPRE 4:3 e o vídeo é desenhado em "cover",
      preenchendo-a sem tarja. O formato do vídeo só é registrado para o diagnóstico.          */
-  const retrato=h>w;
-  alvo.style.aspectRatio=retrato?"3/4":"4/3";
-  alvo.style.maxHeight="46vh";
+  /* VISOR 16:9 em QUALQUER aparelho — a altura do iPhone. O vídeo entra em cover, então o
+     formato que o Android entrega (4:3, em pé etc.) não muda mais o tamanho da tela.       */
+  alvo.style.aspectRatio="16/9";
+  alvo.style.maxHeight="34vh";
   const vv=alvo.querySelector("video");
   if(vv){vv.style.objectFit="cover";vv.style.width="100%";vv.style.height="100%"}
   camTopo();
