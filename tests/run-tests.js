@@ -451,6 +451,23 @@ t("etapa 2: escolher um bloco mostra so o que e daquele assunto", () => {
   okv(run(env, 'ADMABA="estoque",admBloco()') === "estoque", "o bloco escolhido tem de sobreviver ao redesenho");
 });
 
+t("etapa 2: com servidor ligado, as ações de usuário vão para a API (não só para o aparelho)", () => {
+  const env = novo();
+  const html = fs.readFileSync(HTML, "utf8");
+  /* cada botão da lista de usuários precisa ter o caminho do servidor */
+  for (const acao of ["criar","senhaProvisoria","desbloquear","desativar","reativar"])
+    okv(html.includes('"' + acao + '"'), "falta a ação " + acao + " na tela");
+  /* as ações do servidor são chamadas por apiContas dentro dos botões */
+  okv(/apiContas\("criar"/.test(html), "criar usuário não fala com o servidor");
+  okv(/apiContas\("senhaProvisoria"/.test(html), "senha provisória não fala com o servidor");
+  okv(/apiContas\(mapa\[a\]/.test(html), "bloquear/desativar/reativar não falam com o servidor");
+  /* sem servidor nada quebra: contasAtivas() é falso e o caminho local continua */
+  eq(run(env, "contasAtivas()"), false, "sem servidor não deve haver contas ativas:");
+  okv(run(env, "typeof apiContas") === "function", "falta a chamada à API de contas");
+  /* toque duplo em "criar" não pode criar duas contas */
+  okv(html.includes("__criandoConta"), "falta a trava de toque duplo ao criar conta");
+});
+
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
   const env = novo();
   const html = fs.readFileSync(HTML, "utf8");
