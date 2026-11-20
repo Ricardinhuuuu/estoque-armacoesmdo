@@ -499,10 +499,10 @@ t("etapa 3: o catálogo acompanha as movimentações e o servidor o conhece ante
   /* o servidor cadastra o catálogo do lote antes de validar */
   const api = fs.readFileSync(require("path").join(__dirname, "..", "api", "movimentos.js"), "utf8");
   okv(api.includes("cadastrarProdutosDoLote"), "o servidor não cadastra os produtos do lote");
-  okv(/cadastrarProdutosDoLote\(db, corpo\.produtos\)/.test(api), "o servidor não chama o cadastro do lote");
+  okv(/cadastrarProdutosDoLote\(db, corpo\.produtos, corpo\.historico\)/.test(api), "o servidor não chama o cadastro do lote");
   /* a ORDEM importa: gravar o catálogo, depois carregar para validar (a definição da função
      aparece antes no arquivo, então comparamos a chamada, não o nome) */
-  const chamadaCadastro = api.indexOf("= await cadastrarProdutosDoLote(db, corpo.produtos)");
+  const chamadaCadastro = api.indexOf("= await cadastrarProdutosDoLote(db, corpo.produtos, corpo.historico)");
   const chamadaCarga = api.indexOf("= await carregarProdutos(db)");
   okv(chamadaCadastro > 0 && chamadaCarga > 0 && chamadaCadastro < chamadaCarga,
     "os produtos precisam ser gravados ANTES de carregar para validar");
@@ -514,6 +514,25 @@ t("etapa 3: o catálogo acompanha as movimentações e o servidor o conhece ante
   eq(run(env, "PP.length"), 2, "sem duplicar:");
   eq(run(env, "PP[0][1]"), "Modelo A", "o produto que já existia não é sobrescrito:");
   eq(run(env, 'juntarProdutosDoServidor([{codigo:"222",descricao:"Modelo B",cor:"Azul",inicial:5}])'), 0, "rodar de novo não duplica:");
+});
+
+t("etapa 3: o inicial enviado ao servidor é o estado antes dos movimentos (não conta duas vezes)", async () => {
+  const env = novo(); await comoAdmin(env); await esperar(env, "!!cur");
+  /* cadastro com 13 e 3 baixas já feitas → saldo atual 10 */
+  run(env, "PP=[['P1','Modelo B','Azul',13]];reidx()");
+  run(env, 'M=[1,2,3].map(i=>({id:"m"+i,t:"out",c:"P1",q:1,u:cur.l,o:cur.n,ts:1000+i}));reidx()');
+  eq(run(env, "bal()[0]"), 10, "saldo no app:");
+  const enviado = run(env, "produtosParaServidor()[0]");
+  eq(enviado.inicial, 13, "o inicial enviado tem de ser o estado ANTES dos movimentos:");
+  eq(run(env, "historicoDoAparelho()").P1, 3, "o histórico enviado:");
+  /* e o servidor, calculando inicial + movimentos, chega no MESMO número do app */
+  const { aplicarLote } = require("../api/_lib/movimentos.js");
+  const movs = run(env, "JSON.parse(JSON.stringify(M))");
+  const r = aplicarLote([enviado], [], movs, { agora: 2000 });
+  eq(Object.fromEntries(r.saldos).P1, 10, "o saldo do servidor tem de bater com o do app:");
+  /* com uma baixa NOVA depois, os dois sobem juntos */
+  const r2 = aplicarLote([enviado], movs, [{ id: "m9", t: "out", c: "P1", q: 2, u: "op", o: "Op", ts: 5000 }], { agora: 6000 });
+  eq(Object.fromEntries(r2.saldos).P1, 8, "mais uma baixa de 2:");
 });
 
 t("item 1: o visor acompanha a rolagem (sticky) em vez de ficar colado por cima da tela", () => {
