@@ -133,7 +133,8 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="row" style="align-items:center;justify-content:space-between"><span class="mu">Quantidade por bipada</span><div class="qty"><button id="qm">−</button><b id="qv">1</b><button id="qp">+</button></div></div>
 <button class="btn" id="camBtn" style="margin-top:12px">📷 Ligar câmera (Leitura Automática)</button>
 <div id="camW"><div id="cam"></div><div id="gl"></div></div>
-<div id="zoomBar"><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b>
+<div id="zoomBar"><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="1" aria-label="Zoom da câmera"><b id="zoomV">1x</b>
+ <button type="button" class="pill" id="torchBtn" style="display:none" aria-pressed="false" title="Lanterna">🔦 Lanterna</button>
  <span class="zbtns"><button type="button" class="pill" data-z="1">1x</button><button type="button" class="pill" data-z="2">2x</button><button type="button" class="pill" data-z="3.4">3,4x</button><button type="button" class="pill" data-z="6">6x</button></span></div>
 <div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
 <button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button>
@@ -1753,6 +1754,7 @@ $("undo").onclick=()=>{
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
 async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
+ TORCH=false;{const tb=$("torchBtn");if(tb){tb.style.display="none";tb.classList.remove("at");tb.setAttribute("aria-pressed","false")}}
  document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 /* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
 const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
@@ -1883,13 +1885,16 @@ function travaVerificar(){
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
-const ZOOM=3.4;                 /* zoom com que a câmera abre */
-let ZOOMATUAL=ls("mdo_zoom",null)||ZOOM;   /* último zoom escolhido na barra, fica salvo */
+/* ITEM 3 (pedido do cliente): a câmera abre SEM zoom forçado.
+   Antes abria em 3,4x, o que embaçava o Code 128 e atrapalhava o enquadramento.
+   Agora abre em 1x; o zoom que o operador escolher fica salvo só para a sessão. */
+const ZOOM=1;                   /* zoom com que a câmera abre: 1x, sem ampliação */
+let ZOOMATUAL=ZOOM;             /* não lê mais o último zoom salvo: sempre começa em 1x */
 function zoomAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.zoom=msg}
 /* aplica o zoom escolhido na barra à câmera que está rodando agora (sem reabrir) */
 async function zoomAplicar(z){
  ZOOMATUAL=Math.max(1,Math.min(6,Number(z)||1));
- try{localStorage.setItem("mdo_zoom",String(ZOOMATUAL))}catch(e){}
+ try{localStorage.removeItem("mdo_zoom")}catch(e){}   /* item 3: não guarda zoom entre aberturas */
  const zv=$("zoomV");if(zv)zv.textContent=ZOOMATUAL.toFixed(1).replace(".",",")+"x";
  const zr=$("zoomR");if(zr&&Math.abs(Number(zr.value)-ZOOMATUAL)>0.05)zr.value=ZOOMATUAL;
  /* com a biblioteca rodando, quem sabe mover o zoom é ela */
@@ -1911,6 +1916,49 @@ async function zoomAplicar(z){
  return{nativo,falta}
 }
 /* a barra de zoom: mostra ao ligar a câmera, some ao desligar */
+/* ===== ITEM 4 — lanterna (torch) =====
+   Só aparece quando a câmera que está rodando expõe "torch" nas capacidades.
+   No iPhone com Safari isso normalmente NÃO é exposto: nesse caso o botão fica escondido e,
+   ao tocar, o app explica em vez de fingir que ligou. */
+let TORCH=false, TORCHOK=null;
+function torchTrilha(){
+  try{const v=$("cam")&&$("cam").querySelector("video");const st=v&&v.srcObject;
+      if(st&&st.getVideoTracks&&st.getVideoTracks()[0])return st.getVideoTracks()[0]}catch(e){}
+  try{if(sc&&sc.mdoTrilha)return sc.mdoTrilha()}catch(e){}
+  return null;
+}
+function torchSuportada(){
+  const t=torchTrilha();
+  try{const c=t&&t.getCapabilities&&t.getCapabilities();return !!(c&&c.torch)}catch(e){return false}
+}
+/* mostra o botão só quando há suporte (e sempre deixa claro quando não há) */
+function torchBotao(){
+  const b=$("torchBtn");if(!b)return;
+  TORCHOK=torchSuportada();
+  b.style.display=TORCHOK?"":"none";
+  b.classList.toggle("at",!!TORCH);
+  b.setAttribute("aria-pressed",TORCH?"true":"false");
+  b.textContent=(TORCH?"🔦 Lanterna ligada":"🔦 Lanterna");
+}
+async function torchAplicar(ligar){
+  const t=torchTrilha();
+  if(!t){torchAviso("Lanterna: a câmera não está ligada.");return false}
+  const cap=t.getCapabilities&&t.getCapabilities();
+  if(!cap||!cap.torch){torchAviso("Este aparelho ou navegador não permite lanterna. Use mais luz ou aproxime a etiqueta.");return false}
+  try{
+    await t.applyConstraints({advanced:[{torch:!!ligar}]});
+    TORCH=!!ligar;torchBotao();
+    if(ligar)torchAviso("Lanterna ligada.");
+    return true;
+  }catch(e){
+    TORCH=false;torchBotao();
+    torchAviso("Não foi possível ligar a lanterna neste aparelho.");
+    return false;
+  }
+}
+function torchAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.torch=msg}
+function torchAlternar(){return torchAplicar(!TORCH)}
+
 function zoomBarra(ligar){
  const b=$("zoomBar");if(!b)return;
  b.classList.toggle("on",!!ligar);
@@ -2024,6 +2072,7 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
   addLaser(box);
   document.body.classList.add("camLarga");      /* visor na largura toda da tela */
   zoomBarra(true);
+  TORCH=false;torchBotao();   /* item 4: mostra a lanterna só se o aparelho permitir */
   /* registra o que este aparelho realmente conseguiu */
   CAMDIAG.msAbertura=Math.round(((window.performance&&performance.now)?performance.now():Date.now())-t0);
   CAMDIAG.aparelho=camAparelho();
@@ -2159,6 +2208,7 @@ $("cadPh").onchange=e=>{const f=e.target.files[0];e.target.value="";cadPorFoto(f
    b.classList.toggle("at",Math.abs(Number(b.dataset.z)-z)<0.05);
   });
  };
+ const tb=$("torchBtn");if(tb)tb.onclick=()=>torchAlternar();
  r.addEventListener("input",()=>{marcar();zoomAplicar(Number(r.value))});
  r.addEventListener("change",()=>{marcar();zoomAplicar(Number(r.value))});
  document.querySelectorAll("#zoomBar .zbtns .pill").forEach(b=>{
