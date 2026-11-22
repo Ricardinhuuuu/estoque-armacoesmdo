@@ -1735,7 +1735,7 @@ $("undo").onclick=()=>{
  if(!confirm("Desfazer a sua última bipada: "+TN[minha.t]+" de "+minha.q+" un. — "+nomeP(minha.c)+"?"))return;
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
-async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
+async function camOff(){REC={};last="";lastT=0;if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
  document.body.classList.remove("camLarga");   /* volta o visor para dentro do cartão */$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 /* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
 const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
@@ -1792,7 +1792,7 @@ function camDiagTexto(){
  return "Aparelho: "+(d.aparelho||"—")+" · abertura da câmera: "+(d.msAbertura?d.msAbertura+" ms":"—")+
   " · leitor: "+(d.leitor||"—")+" · zoom de câmera: "+(d.zoomMax>1?d.zoomMax.toFixed(1)+"x":"não exposto")+
   " · ampliação digital: "+(d.digital>1?d.digital.toFixed(1)+"x":"não usada")+" · leituras: "+d.lidas+
-  " · não lidas: "+d.falhas+
+  " · não lidas: "+d.falhas+" · repetições ignoradas: "+(d.dup||0)+
   " · vídeo: "+((d.vw&&d.vh)?(d.vw+"×"+d.vh):"—")+
   " · visor: "+((d.cw&&d.ch)?(d.cw+"×"+d.ch):"—")+
   (d.ultima?" · último uso: "+fmt(d.ultima):"");
@@ -1828,14 +1828,29 @@ function guardarQuadro(v){
 /* (b) troca de código muito rápida costuma ser leitura errada: só aceita se a confiança for boa */
 /* Anti-duplicado: bloqueia só o MESMO código por pouco tempo; o próximo entra na hora.
    Leitura de confiança baixa logo depois de outra também é descartada (evita falso positivo). */
-const GAP_MESMO=1500;
+/* ===== CONTROLE DE DUPLICIDADE (cooldown por código, curto e nunca permanente) =====
+   Cada código tem o seu próprio relógio (REC), então A→B→A com ruído no meio também é protegido.
+   Depois de aceito, o MESMO código só entra de novo quando:
+     1) já passou o cooldown mínimo (COOLDOWN_MIN) E
+     2) ele saiu da frente da câmera por GAP_AUSENCIA (operador trocou a peça) OU
+        ficou parado na frente por REPETE_PARADO (operador quer contar outra unidade igual).
+   Códigos diferentes nunca esperam. Nada fica bloqueado para sempre: os registros expiram sozinhos. */
+const COOLDOWN_MIN=1200,GAP_AUSENCIA=450,REPETE_PARADO=2500;   /* ms; REPETE_PARADO=0 desliga a repetição por permanência */
+let REC={};
 const dedupe=t=>{const agora=Date.now();const c=String(t);
  const fraca=ultimaConf!=null&&ultimaConf<0.45;
- const aceitar=()=>{CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();try{scan(c)}catch(e){console.error(e)}return true};
- /* mesmo código: janela deslizante — enquanto continua na frente da câmera não repete */
- if(c===last){const parado=agora-lastT<GAP_MESMO;lastT=agora;if(parado)return false;return aceitar()}
- if(last&&agora-lastT<300&&fraca)return false;   /* leitura duvidosa logo depois de outra */
- last=c;lastT=agora;return aceitar()};
+ const aceitar=()=>{REC[c]={aceito:agora,visto:agora};
+  const ks=Object.keys(REC);if(ks.length>40)ks.forEach(k=>{if(agora-REC[k].visto>10000)delete REC[k]});
+  last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();try{scan(c)}catch(e){console.error(e)}return true};
+ const r=REC[c];
+ if(r){
+  const ausente=agora-r.visto,desde=agora-r.aceito;
+  r.visto=agora;                                   /* continua à vista: renova só o "visto", nunca o "aceito" */
+  const liberado=desde>=COOLDOWN_MIN&&(ausente>=GAP_AUSENCIA||(REPETE_PARADO>0&&desde>=REPETE_PARADO));
+  if(!liberado){CAMDIAG.dup=(CAMDIAG.dup||0)+1;return false}
+  return aceitar()}
+ if(last&&agora-lastT<300&&fraca)return false;     /* leitura duvidosa logo depois de outra */
+ return aceitar()};
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
@@ -1960,7 +1975,7 @@ async function startLib(box){
   return{nativo:nat,falta};
  };
  return q}
-$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;
+$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;REC={};
  const t0=(window.performance&&performance.now)?performance.now():Date.now();
  if(sc)return camOff();
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}
