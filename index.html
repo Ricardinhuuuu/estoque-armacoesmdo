@@ -67,7 +67,8 @@ main{padding:14px;max-width:640px;margin:0 auto}
 /* Consulta por foto usa outro visor (#qCamBox, criado na hora): mesma altura do Bipar */
 #qCamBox{aspect-ratio:4/3;height:auto;max-height:46vh;width:100%;max-width:100%}
 #qCamBox video,#qCamBox canvas{width:100%;height:100%;object-fit:cover;display:block}
-body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-ratio:4/3;height:auto;max-height:34vh;border-radius:0!important;border:0!important;border-bottom:3px solid var(--b)!important;margin-top:0!important;padding-top:env(safe-area-inset-top)}
+/* ATUALIZAÇÃO 02: o visor da consulta acompanha a rolagem (não fica mais fixo no topo) */
+body.camLarga #qCamBox{max-height:46vh}
 #zoomBar.on{display:flex}
 /* Visor na largura toda da tela: enquanto a camera roda, o visor e a barra de zoom
    saem do cartao (que tem padding e limite de 640px) e viram uma faixa de borda a borda.
@@ -75,12 +76,12 @@ body.camLarga #qCamBox{position:fixed;left:0;right:0;top:0;z-index:60;aspect-rat
 /* Visor + zoom ficam juntos num "dock" fixo no topo, com altura baixa (34% da tela).
    O resto da pagina (cartao, botoes, listas) e empurrado para baixo do dock (padding-top do body,
    calculado em camDockAjusta), entao o operador rola a tela e ve tudo sem nada coberto. */
-body.camDockOn #camDock{position:fixed;left:0;right:0;top:0;z-index:60;background:var(--card);padding-top:env(safe-area-inset-top,0px);box-shadow:0 4px 14px rgba(8,24,72,.25)}
-body.camDockOn #cam{border-radius:0;border:0;border-bottom:3px solid var(--b);margin-top:0;aspect-ratio:4/3;height:auto;max-height:34vh}
-body.camDockOn #zoomBar{border:0;border-bottom:1px solid var(--bd);border-radius:0;margin-top:0;padding:6px 12px}
-body.camDockOn #gl{inset:0;border-radius:0}
 body.camDockOn #cam video,body.camLarga #qCamBox video{object-fit:cover!important}
 #zoomBar input[type=range]{flex:1;min-width:80px;accent-color:var(--b2)}
+/* ATUALIZAÇÃO 02: alvos de toque confortáveis e lanterna */
+#zoomBar .pill,#torchBtn{min-height:40px;min-width:44px}
+#torchBtn{cursor:pointer}#torchBtn.on{background:#f59e0b;color:#111;border-color:#f59e0b}#torchBtn.sem{opacity:.55}
+#camW{touch-action:manipulation}
 #zoomBar b{min-width:46px;text-align:right;font-size:15px}
 .row{display:flex;gap:8px;margin-top:10px}.row input{flex:1;min-width:0;border:2px solid var(--bd);background:var(--card);color:var(--tx);border-radius:12px;padding:12px;font-size:16px}
 .qty{display:flex;align-items:center;gap:6px}.qty button{width:42px;height:46px;border:0;border-radius:12px;background:var(--bl);color:var(--tx);font-size:22px;font-weight:700}.qty b{min-width:30px;text-align:center;font-size:18px}
@@ -135,7 +136,7 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="row" style="align-items:center;justify-content:space-between"><span class="mu">Quantidade por bipada</span><div class="qty"><button id="qm">−</button><b id="qv">1</b><button id="qp">+</button></div></div>
 <button class="btn" id="camBtn" style="margin-top:12px">📷 Ligar câmera (Leitura Automática)</button>
 <div id="camDock"><div id="camW"><div id="cam"></div><div id="gl"></div></div>
-<div id="zoomBar"><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b>
+<div id="zoomBar"><button type="button" class="pill" id="torchBtn" aria-pressed="false" aria-label="Lanterna (flash)" title="Lanterna">🔦</button><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b>
  <span class="zbtns"><button type="button" class="pill" data-z="1">1x</button><button type="button" class="pill" data-z="2">2x</button><button type="button" class="pill" data-z="3.4">3,4x</button><button type="button" class="pill" data-z="6">6x</button></span></div>
 </div><div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
 <button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button>
@@ -1311,7 +1312,7 @@ $("qCam").onclick=async()=>{
    sc=await startLibQ($("qCamBox"));
   }
   qState.sc=sc;addLaser($("qCamBox"));
-  document.body.classList.add("camLarga");      /* visor fixo no topo, conteudo abaixo */
+  document.body.classList.add("camLarga");      /* ATUALIZAÇÃO 02: visor na página, rola junto */
   camDockAjusta();setTimeout(camDockAjusta,300);setTimeout(camDockAjusta,900);
   $("qCam").textContent="⏹ Parar busca";
   const aviso=$("camMsg").dataset.zoom?(" "+$("camMsg").dataset.zoom):"";
@@ -1744,7 +1745,7 @@ $("undo").onclick=()=>{
  if(!confirm("Desfazer a sua última bipada: "+TN[minha.t]+" de "+minha.q+" un. — "+nomeP(minha.c)+"?"))return;
  estorno(minha);audit("DESFAZER",minha.c,minha.q+" un.");sM();draw();
  card("","<div class='mu'>Última bipada desfeita (registrada como estorno, o histórico é mantido).</div>")};
-async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);
+async function camOff(){if(sc){try{await sc.stop();sc.clear()}catch(e){}sc=null}$("cam").style.display="none";zoomBarra(false);TORCH_ON=false;if(typeof torchBotao==="function")torchBotao();if(typeof telaLigada==="function")telaLigada(false);
  document.body.classList.remove("camLarga","camDockOn");camDockAjusta();$("camBtn").textContent="📷 Ligar câmera (Leitura Automática)";$("camMsg").textContent=""}
 /* formatos que o app quer ler; na hora de abrir a câmera só ficam os que o aparelho suporta */
 const FMT_WANT=["code_128","ean_13","ean_8","upc_a","upc_e","code_39","code_93","itf","codabar","qr_code","data_matrix"];
@@ -1759,7 +1760,7 @@ async function fmtDoAparelho(){
  }catch(e){return FMT}
 }
 function camErr(e){const n=(e&&e.name)||String(e);
- if(n==="NotAllowedError"||n==="PermissionDeniedError")return"Câmera bloqueada. No iPhone: Ajustes › Safari › Câmera › Permitir (e abra o app direto no Safari, não dentro do WhatsApp/Instagram). Ou use a foto/digite abaixo.";
+ if(n==="NotAllowedError"||n==="PermissionDeniedError")return"Câmera bloqueada. No iPhone: Ajustes › Safari › Câmera › Permitir (e abra o app direto no Safari, não dentro do WhatsApp/Instagram). No Android/Chrome: toque no cadeado ao lado do endereço › Permissões › Câmera › Permitir. Ou use a foto/digite abaixo.";
  if(n==="NotFoundError"||n==="DevicesNotFoundError")return"Nenhuma câmera encontrada neste aparelho. Use a foto ou digite abaixo.";
  if(n==="NotReadableError"||n==="TrackStartError")return"A câmera está em uso por outro app. Feche os outros apps e toque de novo.";
  if(n==="SecurityError"||!window.isSecureContext)return"A câmera só funciona em página segura (https). Abra pelo link https do app.";
@@ -1819,20 +1820,13 @@ function ajustarProporcao(box){
   /* proporcao entre 0.75 e 1.34 (retrato/quadrado) mantem a imagem inteira sem tarja */
   const p=Math.max(0.75,Math.min(4/3,h/w));
   alvo.style.aspectRatio=String(1/p);   /* largura/altura */
-  alvo.style.maxHeight="34vh";
+  alvo.style.maxHeight="46vh";
   camDockAjusta();
  }catch(e){}
 }
-/* Empurra o conteudo da pagina para baixo do visor fixo (nada fica coberto) */
-function camDockAjusta(){
- const b=document.body,d=$("camDock"),q=$("qCamBox");
- let h=0;
- if(b.classList.contains("camDockOn")&&d)h=d.offsetHeight;
- else if(b.classList.contains("camLarga")&&q)h=q.offsetHeight;
- b.style.paddingTop=h?h+"px":"";
- /* o padding de seguranca do topo ja esta dentro do dock */
- document.documentElement.style.paddingTop=h?"0px":"";
-}
+/* ATUALIZAÇÃO 02: o visor agora faz parte da página e rola junto com ela.
+   Mantida só para limpar o recuo que a versão anterior aplicava ao body. */
+function camDockAjusta(){document.body.style.paddingTop="";document.documentElement.style.paddingTop=""}
 window.addEventListener("resize",()=>camDockAjusta());
 window.addEventListener("orientationchange",()=>setTimeout(camDockAjusta,300));
 /* confiança da última leitura feita pelo leitor nativo (null quando o leitor não informa) */
@@ -1852,9 +1846,9 @@ function guardarQuadro(v){
    Leitura de confiança baixa logo depois de outra também é descartada (evita falso positivo). */
 const dedupe=t=>{const agora=Date.now();const c=String(t);
  const fraca=ultimaConf!=null&&ultimaConf<0.45;
- if(c===last){if(agora-lastT<700)return false;lastT=agora;scan(c);return true}
+ if(c===last){if(agora-lastT<700)return false;lastT=agora;scan(c);lastT=Date.now();camRetomar();return true}
  if(last&&agora-lastT<300&&fraca)return false;   /* leitura duvidosa logo depois de outra: ignora */
- last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);return true};
+ last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);lastT=Date.now();camRetomar();return true};
 /* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
@@ -1921,6 +1915,47 @@ async function aplicarZoom(stream,box){
 }
 function addLaser(box){if(box.querySelector("#lz"))return;const z=document.createElement("div");z.id="lz";z.innerHTML='<div class="ln"></div>';box.appendChild(z)}
 async function focusCont(track){try{const c=track.getCapabilities&&track.getCapabilities();if(c&&c.focusMode&&c.focusMode.includes("continuous"))await track.applyConstraints({advanced:[{focusMode:"continuous"}]})}catch(e){}}
+/* ===== ATUALIZAÇÃO 02 — lanterna, tela ligada, retomada da câmera e foco por toque (só a câmera do Bipar) ===== */
+let TORCH_ON=false,WAKE=null;
+function camTrack(){try{const v=$("cam")&&$("cam").querySelector("video");const st=v&&v.srcObject;return(st&&st.getVideoTracks&&st.getVideoTracks()[0])||null}catch(e){return null}}
+function torchSuportada(){try{const t=camTrack(),c=t&&t.getCapabilities&&t.getCapabilities();return !!(c&&c.torch)}catch(e){return false}}
+function torchBotao(){const b=$("torchBtn");if(!b)return;b.classList.toggle("on",TORCH_ON);b.classList.toggle("sem",!torchSuportada());b.setAttribute("aria-pressed",TORCH_ON?"true":"false")}
+async function torchAlternar(){
+ const msg=$("camMsg"),t=camTrack();
+ if(!t){if(msg)msg.textContent="Ligue a câmera primeiro para usar a lanterna.";return}
+ if(!torchSuportada()){TORCH_ON=false;torchBotao();
+  if(msg)msg.textContent="Lanterna indisponível: este aparelho ou navegador não deixa a página acender o flash (comum no iPhone/Safari). Use mais luz no ambiente ou mude o ângulo da etiqueta para evitar reflexo.";return}
+ try{await t.applyConstraints({advanced:[{torch:!TORCH_ON}]});TORCH_ON=!TORCH_ON;if(msg)msg.textContent=TORCH_ON?"🔦 Lanterna ligada.":"Lanterna desligada."}
+ catch(e){TORCH_ON=false;if(msg)msg.textContent="Não consegui acender a lanterna neste aparelho ("+((e&&e.name)||"erro")+")."}
+ torchBotao()}
+async function telaLigada(ligar){
+ try{
+  if(ligar){if(navigator.wakeLock&&!WAKE){WAKE=await navigator.wakeLock.request("screen");if(WAKE&&WAKE.addEventListener)WAKE.addEventListener("release",()=>{WAKE=null})}}
+  else if(WAKE){const w=WAKE;WAKE=null;await w.release()}
+ }catch(e){WAKE=null}}
+/* depois de confirmação/alerta ou volta do segundo plano, o vídeo pode ficar pausado: retoma sem reabrir a câmera */
+function camRetomar(){
+ try{
+  const t=camTrack();
+  if(t&&t.readyState==="ended"){camInterrompida();return false}
+  const v=$("cam")&&$("cam").querySelector("video");
+  if(v&&v.paused){const p=v.play();if(p&&p.catch)p.catch(()=>{})}
+  return true
+ }catch(e){return false}}
+async function camInterrompida(){
+ if(!sc)return;
+ try{await camOff()}catch(e){}
+ const msg=$("camMsg");
+ if(msg)msg.textContent="A câmera foi interrompida (outro app usou a câmera ou o aparelho suspendeu o navegador). Toque em 'Ligar câmera' para continuar."}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&sc){telaLigada(true);camRetomar()}});
+/* toque no visor = refocar (só onde o aparelho oferece foco pontual; sem suporte, não faz nada) */
+function focoPorToque(){
+ const t=camTrack();if(!t)return;
+ try{
+  const c=t.getCapabilities&&t.getCapabilities();
+  if(!(c&&c.focusMode&&c.focusMode.includes("single-shot")))return;
+  t.applyConstraints({advanced:[{focusMode:"single-shot"}]}).then(()=>setTimeout(()=>focusCont(t),900)).catch(()=>{});
+ }catch(e){}}
 /* Motor 1 (mais rápido, sem internet): leitor nativo do navegador (Android/Chrome) */
 async function nativeOK(){try{if(!("BarcodeDetector" in window))return null;const sup=await BarcodeDetector.getSupportedFormats(),f=await fmtDoAparelho();return f.includes("code_128")?f:(f.length?f:null)}catch(e){return null}}
 async function startNative(box,f){
@@ -1931,7 +1966,8 @@ async function startNative(box,f){
  try{await v.play()}catch(e){}
  focusCont(stream.getVideoTracks()[0]);
  const z=await aplicarZoom(stream,box);
- let on=true;
+ let on=true,rodando=false;
+ try{const t0=stream.getVideoTracks()[0];t0&&t0.addEventListener&&t0.addEventListener("ended",()=>{if(on)camInterrompida()})}catch(e){}
  (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(()=>{rodando=false});
    if(Date.now()-(ULTQUADRO?ULTQUADRO.quando:0)>400)guardarQuadro(v)}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
  const mover=async(alvo)=>{
@@ -1992,9 +2028,11 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
    try{await loadLib("qr")}catch(e){throw{name:"LibFail"}}
    sc=await startLib(box)}
   addLaser(box);
-  document.body.classList.add("camLarga","camDockOn");      /* visor fixo no topo, conteudo abaixo */
+  document.body.classList.add("camLarga","camDockOn");      /* ATUALIZAÇÃO 02: visor na página, rola junto */
   zoomBarra(true);
   camDockAjusta();setTimeout(camDockAjusta,300);setTimeout(camDockAjusta,900);
+  torchBotao();telaLigada(true);
+  try{box.scrollIntoView({block:"nearest",behavior:"smooth"})}catch(e){}
   /* registra o que este aparelho realmente conseguiu */
   CAMDIAG.msAbertura=Math.round(((window.performance&&performance.now)?performance.now():Date.now())-t0);
   CAMDIAG.aparelho=camAparelho();
@@ -2016,6 +2054,8 @@ $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const bo
  $("camBtn").disabled=false};
 /* 📸 Ler por foto: primeiro tenta o último quadro da câmera (quase sempre é o código que
    está na frente dela, e resolve o caso de reflexo na leitura ao vivo). Se não der, abre a câmera. */
+$("torchBtn").onclick=()=>torchAlternar();
+$("camW").addEventListener("click",focoPorToque);
 $("phBtn").onclick=async()=>{
  initAudio();
  const cv=ULTQUADRO&&(Date.now()-ULTQUADRO.quando<20000)?ULTQUADRO.cv:null;
@@ -2141,5 +2181,5 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.6.1 · 2026-11</div>
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.7.0 · 2026-11</div>
 </body></html>
