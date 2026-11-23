@@ -136,7 +136,7 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="row" style="align-items:center;justify-content:space-between"><span class="mu">Quantidade por bipada</span><div class="qty"><button id="qm">−</button><b id="qv">1</b><button id="qp">+</button></div></div>
 <button class="btn" id="camBtn" style="margin-top:12px">📷 Ligar câmera (Leitura Automática)</button>
 <div id="camDock"><div id="camW"><div id="cam"></div><div id="gl"></div></div>
-<div id="zoomBar"><button type="button" class="pill" id="torchBtn" aria-pressed="false" aria-label="Lanterna (flash)" title="Lanterna">🔦</button><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="3.4" aria-label="Zoom da câmera"><b id="zoomV">3,4x</b>
+<div id="zoomBar"><button type="button" class="pill" id="torchBtn" aria-pressed="false" aria-label="Lanterna (flash)" title="Lanterna">🔦</button><span class="mu">🔍</span><input type="range" id="zoomR" min="1" max="6" step="0.1" value="2" aria-label="Zoom da câmera"><b id="zoomV">2,0x</b>
  <span class="zbtns"><button type="button" class="pill" data-z="1">1x</button><button type="button" class="pill" data-z="2">2x</button><button type="button" class="pill" data-z="3.4">3,4x</button><button type="button" class="pill" data-z="6">6x</button></span></div>
 </div><div id="hid" style="display:none"></div><div id="camMsg" class="mu" style="margin-top:8px"></div>
 <button class="btn ghost" id="phBtn" style="margin-top:8px">📸 Ler por foto (alternativa)</button>
@@ -198,10 +198,19 @@ async function H(s){
  /* 2) HTTP simples (sem crypto.subtle) ou navegador antigo: reserva determinística.
     Só o modo local usa isto; com servidor, a senha é conferida por PBKDF2 no servidor. */
  {let h=5381;for(const ch of dados)h=(h*33)^ch.charCodeAt(0);return"f"+(h>>>0).toString(16)}}
+/* ATUALIZAÇÃO 05 — senhas novas: PBKDF2-SHA256 com sal aleatório por usuário. H() acima só confere contas antigas (e as migra no próximo login correto). */
+const PBK_IT=150000,okSub=()=>!!(window.crypto&&crypto.subtle&&crypto.subtle.deriveBits);
+const hx=a=>[...new Uint8Array(a)].map(x=>x.toString(16).padStart(2,"0")).join("");
+const unhx=t=>new Uint8Array((t.match(/../g)||[]).map(x=>parseInt(x,16)));
+async function pbk(p,salt,it){const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(p),"PBKDF2",false,["deriveBits"]);return hx(await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt:unhx(salt),iterations:it},k,256))}
+async function mkHash(p){if(!okSub())throw new Error("Este endereço não permite criptografia segura. Abra o app por HTTPS.");const a=new Uint8Array(16);crypto.getRandomValues(a);const sa=hx(a);return{h:await pbk(p,sa,PBK_IT),s:sa,it:PBK_IT,v:2}}
+async function chkHash(u,l,p){if(u.v===2){if(!okSub())return false;return(await pbk(p,u.s,u.it||PBK_IT))===u.h}return u.h===await H(l+p)}
+function senhaErro(p,l){p=String(p||"");if(p.length<8)return"A senha precisa ter pelo menos 8 caracteres.";if(!/[A-Za-z]/.test(p)||!/\d/.test(p))return"A senha precisa ter letras e números.";if(l&&p.toLowerCase()===String(l).toLowerCase())return"A senha não pode ser igual ao login.";return""}
+function loginErro(l){if(!l||/\s/.test(l))return"Escolha um login sem espaços.";if(!/^[a-z0-9._-]{3,30}$/.test(l))return"Login: 3 a 30 caracteres (letras, números, ponto, hífen ou _).";return""}
 /* ===== Persistência (uma chave por dado, grava só o que mudou) ===== */
-const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess",cads:"mdo_cads",invh:"mdo_invh"};
+const K={P:"mdo_P",min:"mdo_min",m:"mdo_m",u:"mdo_u",req:"mdo_req",cnt:"mdo_cnt",s:"mdo_s",ab:"mdo_ab",abd:"mdo_abd",aud:"mdo_aud",fila:"mdo_fila",sync:"mdo_sync",sess:"mdo_sess",cads:"mdo_cads",invh:"mdo_invh",inv:"mdo_inv"};
 const KV={}; /* última gravação de cada chave: mantém as leituras coerentes mesmo sem armazenamento */
-const sP=(k,v)=>{try{KV[k]=JSON.stringify(v);localStorage.setItem(K[k],JSON.stringify(v))}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true)}};
+const sP=(k,v)=>{try{KV[k]=JSON.stringify(v);localStorage.setItem(K[k],JSON.stringify(v));return true}catch(e){toast("Armazenamento cheio: exporte um backup e limpe o histórico antigo.",true);return false}};
 const sM=()=>sP("m",M),sU=()=>sP("u",U),sR=()=>sP("req",REQ),sC=()=>sP("cnt",CNT),sMin=()=>sP("min",MIN);
 const sF=()=>sP("fila",FILA),sS=()=>sP("sync",SYNC);
 /* Leitura tolerante do armazenamento (tipo errado ou JSON corrompido não derruba o app) */
@@ -217,6 +226,7 @@ function normCnt(o){const r={};Object.keys(o||{}).forEach(c=>{const v=o[c];const
 let PP=lsOK("P",P.map(p=>p.slice()));
 if(ls(K.P,undefined)===undefined)sP("P",PP);
 let MIN=lsOK("min",{}),M=lsOK("m",[]),U=lsOK("u",[]),REQ=lsOK("req",[]),CNT=normCnt(lsOK("cnt",{})),AUD=lsOK("aud",[]);
+if(U.some(u=>u&&typeof u.temp==="string"&&u.temp)){U.forEach(u=>{if(u&&typeof u.temp==="string"&&u.temp)u.temp=true});sU()}
 let cur=null,mode="out",qty=1,sc=null,last="",lastT=0,audioCtx=null,idx={};
 /* ETAPA 3 — fila de envio: só sai daqui depois que o servidor confirma */
 let FILA=lsOK("fila",[]);
@@ -245,12 +255,23 @@ function normCode(raw){
 
 /* ===== Movimentações com id, estorno e remoção lógica (backup e desfazer seguros) ===== */
 const vivo=m=>!m.del;
-function reg(t,c,q,x){const m=Object.assign({id:uid(),t,c,q,o:cur.n,u:cur.l,ts:Date.now()},x||{});M.push(m);sM();enfileirar(m);return m}
+/* ATUALIZAÇÃO 04 (A1) — quantidade válida: número inteiro; entrada/baixa > 0; ajuste ≠ 0 (aceita número em texto). Devolve null se inválida. */
+function qVal(m){const q=m&&m.q;if(typeof q!=="number"&&!(typeof q==="string"&&/^\s*-?\d+\s*$/.test(q)))return null;const n=Number(q);if(!Number.isInteger(n)||n===0)return null;if(m.t!=="adj"&&n<0)return null;return n}
+/* reg recusa (devolve null) código fora do cadastro, tipo desconhecido ou quantidade inválida: nada é gravado */
+function reg(t,c,q,x){
+ if(idx[c]==null||!(t==="in"||t==="out"||t==="adj"))return null;
+ const qn=qVal({t,q});if(qn==null)return null;
+ const m=Object.assign({id:uid(),t,c,q:qn,o:cur.n,u:cur.l,ts:Date.now(),status:"pendente",origem:"não informada"},x||{});M.push(m);   /* B2: status (pendente→confirmado/recusado) e origem */
+ const g1=sM(),g2=enfileirar(m);REG_GRAVOU=!!(g1&&g2);   /* A5: false = ficou só na memória */
+ return m}
+let REG_GRAVOU=true;
 function estorno(m,mo){
  if(m.est)return null;
- const e=reg("adj",m.c,m.t==="out"?m.q:-m.q,{o:mo||cur.n,u:(mo?"sys":cur.l),est:m.id,obs:"Estorno automático de "+m.id});
+ const qo=qVal(m);if(qo==null)return null;   /* A1: movimento com quantidade inválida não gera estorno */
+ const e=reg("adj",m.c,m.t==="out"?qo:-qo,{o:mo||cur.n,u:(mo?"sys":cur.l),est:m.id,origem:"estorno",obs:"Estorno automático de "+m.id});
+ if(!e)return null;
  m.est=e.id;sM();return e}
-function bal(){const b=PP.map(p=>+p[3]||0);M.forEach(m=>{if(m.del)return;const i=idx[m.c];if(i!=null)b[i]+=m.t==="out"?-m.q:m.q});return b}
+function bal(){const b=PP.map(p=>+p[3]||0);M.forEach(m=>{if(m.del||m.status==="recusado")return;const i=idx[m.c];if(i==null)return;const n=qVal(m);if(n==null)return;/* A1: quantidade inválida fica fora do saldo (e aparece em Divergências) */b[i]+=m.t==="out"?-n:n});return b}
 
 /* ===== Auditoria local (data, hora, responsável) ===== */
 function audit(acao,alvo,extra){
@@ -263,10 +284,10 @@ function showLogin(){
  const f=!U.length;$("lg").style.display="flex";$("lgCad").style.display="";$("lgCadMsg").textContent="";$("lgT").textContent=f?"Primeiro acesso: crie o administrador":"Entre com seu login e senha";
  $("lgN").style.display=f?"block":"none";$("lgS").style.display=f?"none":"block";$("lgB").textContent=f?"Criar e entrar":"Entrar";$("lgE").textContent="";
  const u=f?null:U.find(x=>x.l===String($("lgL").value).trim().toLowerCase());
- $("lgB").disabled=!!(u&&u.st==="bloq");
- $("lgB").textContent=u&&u.st==="bloq"?"Acesso bloqueado":(f?"Criar e entrar":"Entrar")}
+ $("lgB").disabled=!!(u&&u.st==="bloq"&&u.r!=="admin");
+ $("lgB").textContent=u&&u.st==="bloq"&&u.r!=="admin"?"Acesso bloqueado":(f?"Criar e entrar":"Entrar")}
 function enter(l){
- cur=U.find(x=>x.l===l);if(!cur)return showLogin();
+ cur=U.find(x=>x.l===l);if(!cur||cur.st==="pend"||cur.st==="desat"||cur.st==="bloq"){cur=null;return showLogin()}
  sv(K.s,l);$("lg").style.display="none";$("lgP").value="";
  $("who").textContent="👤 "+cur.n+(isA()?" · Administrador":" · Operador");$("tAdm").style.display=isA()?"":"none";
  const d=new Date().toISOString().slice(0,10),antes=ls(K.abd,"");
@@ -276,27 +297,33 @@ function enter(l){
 /* Bloqueio após 3 tentativas (o estado fica gravado em mdo_u; a Etapa 4 leva essa validação para a API da Vercel) */
 function falhaTentativa(u){
  u.t=(u.t||0)+1;
- if(u.t>=3){u.st="bloq";u.bloqEm=Date.now();sU();audit("BLOQUEIO",u.l,"3 tentativas incorretas");
-  avisar("O operador "+u.n+" ("+u.l+") bloqueou o acesso por tentativas de senha incorreta",{alvo:u.l});
-  return "Acesso bloqueado: mais de 3 tentativas com senha incorreta. Entre em contato com o administrador."}
- sU();return "Login ou senha incorretos. Tentativas restantes: "+(3-u.t)+"."}
+ if(u.t>=3){if(u.st==="pend")u.pend=true;u.st="bloq";u.bloqEm=Date.now();sU();audit("BLOQUEIO",u.l,"3 tentativas incorretas");
+  avisar("O usuário "+u.n+" ("+u.l+") foi bloqueado por 3 tentativas de senha incorreta",{alvo:u.l});
+  return "Acesso bloqueado após 3 tentativas incorretas. Peça ao administrador para desbloquear."}
+ sU();audit("TENTATIVA INCORRETA",u.l,"restam "+(3-u.t));
+ return u.t>=2?"Login ou senha incorretos. Tentativas restantes: "+(3-u.t)+".":"Login ou senha incorretos."}
+/* administrador bloqueado se libera sozinho após 15 min (evita ficar sem ninguém para desbloquear); operador só o administrador libera */
+function desbloqAuto(u){if(u.st==="bloq"&&u.r==="admin"&&Date.now()-(u.bloqEm||0)>15*60000){u.st="ativo";u.t=0;sU();audit("DESBLOQUEIO AUTOMÁTICO",u.l,"administrador, 15 min");return true}return u.st!=="bloq"}
 async function lgSubmit(){initAudio();
  if(modoCad)return cadastrarOperador();
  /* ETAPA 4 — com servidor configurado, quem valida a senha é o servidor */
  if(contasAtivas())return entrarNoServidor();const l=String($("lgL").value).trim().toLowerCase(),p=$("lgP").value;
  if(!l||!p){$("lgE").textContent="Preencha login e senha.";return}
  if(!U.length){
-  const n=$("lgN").value.trim();
-  if(!nomeOK(n)){$("lgE").textContent="Digite nome e sobrenome";return}
-  if(p.length<6){$("lgE").textContent="A senha precisa ter pelo menos 6 caracteres.";return}
-  U.push({l,n,r:"admin",h:await H(l+p),st:"ativo",ts:Date.now()});sU();audit("AUTOCADASTRO",l);return enter(l)}
+  const n=$("lgN").value.trim(),e=!nomeOK(n)?"Digite nome e sobrenome":(loginErro(l)||senhaErro(p,l));
+  if(e){$("lgE").textContent=e;return}
+  try{U.push(Object.assign({l,n,r:"admin",st:"ativo",ts:Date.now(),t:0},await mkHash(p)))}catch(x){$("lgE").textContent=x.message;return}
+  sU();audit("PRIMEIRO ADMINISTRADOR",l);return enter(l)}
  const u=U.find(x=>x.l===l);
- if(u&&u.st==="bloq"){$("lgE").textContent="Acesso bloqueado: mais de 3 tentativas com senha incorreta. Entre em contato com o administrador.";return}
- if(!u||u.h!==await H(l+p)){$("lgE").textContent=u?falhaTentativa(u):"Login ou senha incorretos.";beep(false);return}
+ if(u&&u.st==="bloq"&&!desbloqAuto(u)){$("lgE").textContent="Acesso bloqueado. Fale com o administrador.";return}
+ if(!u||!(await chkHash(u,l,p))){$("lgE").textContent=u?falhaTentativa(u):"Login ou senha incorretos.";beep(false);return}
+ if(u.st==="pend"){$("lgE").textContent="Cadastro aguardando aprovação do administrador.";return}
  if(u.st==="desat"){$("lgE").textContent="Acesso desativado. Fale com o administrador.";return}
- u.t=0;sU();
+ u.t=0;
+ if(u.v!==2&&okSub()){try{Object.assign(u,await mkHash(p))}catch(x){}}   /* conta antiga: troca para o hash novo só deste usuário, ao entrar */
+ sU();
  if(u.temp){cur=u;$("lg").style.display="none";$("lgP").value="";trocaObrig(u);return}
- enter(l)}
+ enter(l);audit("LOGIN",l)}
 $("lgB").onclick=()=>lgSubmit();
 /* ===== Seção 6.1 — autocadastro de operador direto na tela de início (sem e-mail) ===== */
 let modoCad=false;
@@ -316,7 +343,7 @@ function modoCadastro(ligar){
   t.textContent="Criar meu acesso — só nome, login e senha. Nenhum e-mail é pedido.";
   b.textContent="Criar meu acesso";
   c.textContent="↩ Voltar para a entrada";
-  m.textContent="Seu acesso será de operador. O administrador é avisado do novo cadastro.";
+  m.textContent="Seu acesso será de operador e só vale depois que o administrador aprovar. Senha: mínimo 8, com letras e números.";
  }else{
   t.textContent=U.length?"Entre com seu login e senha.":"Primeiro acesso: você será o administrador.";
   b.textContent=U.length?"Entrar":"Criar administrador";
@@ -332,6 +359,7 @@ async function cadastroNoServidor(n,l,p){
  try{
   const j=await apiContas("cadastrar",{nome:n,login:l,senha:p});
   if(!j.ok){$("lgE").textContent=j.erro||"Não foi possível criar o acesso.";beep(false);return}
+  if(j.pendente||(j.usuario&&j.usuario.st==="pend")){audit("AUTOCADASTRO",l,"servidor, pendente");modoCadastro(false);$("lgN").value="";$("lgE").textContent="Cadastro enviado. Aguarde a aprovação do administrador para entrar.";return}
   salvarSess(j);
   audit("AUTOCADASTRO",l,"servidor");
   avisar(j.aviso||("Novo operador cadastrado: "+n+" ("+l+")"),{alvo:l});
@@ -344,9 +372,8 @@ function cadastrarOperador(){return cadOperador()}
 /* valida os 3 campos e devolve o erro (ou "" quando está tudo certo) */
 function cadValidar(n,l,p){
  if(!nomeOK(n))return"Digite nome e sobrenome";
- if(!l||/\s/.test(l))return"Escolha um login sem espaços.";
- if(p.length<6)return"A senha precisa ter pelo menos 6 caracteres.";
- if(!contasAtivas()&&U.some(x=>x.l===l))return"Este login já está em uso. Escolha outro.";
+ const e=loginErro(l)||senhaErro(p,l);if(e)return e;
+ if(!contasAtivas()&&U.some(x=>String(x.l).toLowerCase()===l))return"Este login já está em uso. Escolha outro.";
  return"";
 }
 async function cadOperador(){
@@ -354,18 +381,14 @@ async function cadOperador(){
  const n=$("lgN").value.trim(),l=String($("lgL").value||"").trim().toLowerCase(),p=$("lgP").value;
  const erro=cadValidar(n,l,p);
  if(erro){$("lgE").textContent=erro;return}
- if(!nomeOK(n)){$("lgE").textContent="Digite nome e sobrenome";return}
- if(!l||/\s/.test(l)){$("lgE").textContent="Escolha um login sem espaços.";return}
- if(p.length<6){$("lgE").textContent="A senha precisa ter pelo menos 6 caracteres.";return}
  if(contasAtivas()){await cadastroNoServidor(n,l,p);return}
- if(U.some(x=>x.l===l)){$("lgE").textContent="Este login já está em uso. Escolha outro.";return}
- const u={l,n,r:"operador",h:await H(l+p),st:"ativo",ts:Date.now(),t:0};
- U.push(u);sU();
- audit("AUTOCADASTRO",l,"tela de início");
- avisar("Novo operador cadastrado: "+n+" ("+l+")",{alvo:l});
+ let hh;try{hh=await mkHash(p)}catch(x){$("lgE").textContent=x.message;return}
+ if(U.some(x=>String(x.l).toLowerCase()===l)){$("lgE").textContent="Este login já está em uso. Escolha outro.";return}
+ U.push(Object.assign({l,n,r:"operador",st:"pend",ts:Date.now(),t:0},hh));sU();
+ audit("AUTOCADASTRO",l,"pendente de aprovação");
+ avisar("Novo cadastro aguardando aprovação: "+n+" ("+l+")",{alvo:l});
  modoCadastro(false);$("lgN").value="";
- $("lgE").textContent="Acesso criado. Você já pode entrar com o login e a senha que escolheu.";
- enter(l);
+ $("lgE").textContent="Cadastro enviado. Aguarde a aprovação do administrador para entrar.";
 }
 $("lgP").onkeydown=e=>{if(e.key==="Enter")$("lgB").onclick()};
 $("lgS").onclick=()=>{const i=$("lgP");i.type=i.type==="password"?"text":"password";$("lgS").textContent=i.type==="password"?"👁":"🙈"};
@@ -376,10 +399,11 @@ function trocaObrig(u){
  $("lgN").style.display="none";$("lgL").value=u.l;$("lgL").disabled=true;
  t.textContent="Troca de senha obrigatória: escolha uma nova senha (diferente da provisória)";
  $("lgE").textContent="";$("lgP").value="";$("lgP").type="password";$("lgS").style.display="block";b.disabled=false;b.textContent="Salvar nova senha";
- b.onclick=async()=>{const np=$("lgP").value;
-  if(np.length<6){$("lgE").textContent="A senha precisa ter pelo menos 6 caracteres.";return}
-  if(np===u.temp){$("lgE").textContent="A nova senha não pode ser igual à provisória.";return}
-  u.h=await H(u.l+np);u.temp=null;u.t=0;sU();audit("TROCA DE SENHA",u.l);
+ b.onclick=async()=>{const np=$("lgP").value,e=senhaErro(np,u.l);
+  if(e){$("lgE").textContent=e;return}
+  if(await chkHash(u,u.l,np)){$("lgE").textContent="A nova senha não pode ser igual à provisória.";return}
+  try{Object.assign(u,await mkHash(np))}catch(x){$("lgE").textContent=x.message;return}
+  u.temp=null;u.t=0;sU();audit("TROCA DE SENHA",u.l);
   $("lgL").disabled=false;$("lgS").style.display="none";$("lgB").onclick=()=>lgSubmit();enter(u.l)}}
 
 /* ===== Som (apito alto) e luz verde ===== */
@@ -405,14 +429,16 @@ function unk(c){beep(false);
   PP.push([c,d.trim().toUpperCase(),cor.trim().toUpperCase(),q0]);sP("P",PP);reidx();draw();last="";audit("PRODUTO CADASTRADO",c,d.trim());
   card("","<h3>✅ Produto cadastrado</h3><b>"+esc(d)+"</b><div class='mu'>"+esc(c)+"</div>");return}
  card("err","<h3>❌ Código não encontrado</h3><div class='big'>"+esc(c)+"</div><div class='mu'>Esse código não está no cadastro."+(isA()?"":" Peça ao administrador para cadastrar.")+"</div>")}
-function scan(raw){if(!cur)return;const c=normCode(raw);if(!c)return;
+function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
  if(idx[c]==null)return unk(c);
  const i=idx[c],p=PP[i];
  if(mode==="cnt"){
-  CNT[c]={q:(CNT[c]?CNT[c].q||0:0)+qty,l:cur.l,n:cur.n,ts:Date.now()};sC();hit(c);beep(true);
-  if(typeof invContar==="function")invContar(c,qty);
-  card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
-  draw();return}
+   if(!invAndamento()){beep(false);card("err","<h3>⛔ Sem inventário em andamento</h3><div class='mu'>"+(INV.ativo?"O inventário está pausado. O administrador precisa retomá-lo.":"Peça ao administrador para iniciar um inventário.")+" Nada foi contado e o estoque não mudou.</div>");return}
+   const rc=invContar(c);
+   if(rc&&rc.dup){beep(false);toast("Leitura repetida ignorada (mesmo produto há instantes).",true);return}
+   const sal=bal()[i],df=rc.q-sal;hit(c);beep(true);
+   card("","<h3>📋 Contagem · +1 un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Contado</div><div class='big'>"+rc.q+"</div><div class='mu'>Registrado: "+sal+" · Diferença: "+(df>0?"+":"")+df+" (parcial — o estoque não foi alterado)</div>");
+   draw();return}
  let b=bal()[i];
  /* ETAPA 3.2 — confirmação clara antes de efetivar (o admin pode desligar em Admin › Dados) */
  const confirmarBip=ls("mdo_cf",true);
@@ -425,11 +451,14 @@ function scan(raw){if(!cur)return;const c=normCode(raw);if(!c)return;
   if(!isA()){REQ.push({id:uid(),c,q:qty,u:cur.l,o:cur.n,ts:Date.now()});sR();beep(false);audit("SOLICITAÇÃO",c,qty);
    card("err","<h3>⛔ Saldo insuficiente ("+b+")</h3><b>"+esc(p[1])+"</b><div class='mu'>Baixa bloqueada. Solicitação enviada ao administrador para aprovação.</div>");draw();return}
   if(!confirm("Saldo insuficiente ("+b+"). Dar baixa mesmo assim?"))return}
- reg(mode,c,qty);b=bal()[i];const mn=MIN[c]||0;
+ const mv=reg(mode,c,qty,{origem:origem||"não informada"});
+ if(!mv){beep(false);card("err","<h3>⛔ Movimento NÃO registrado</h3><div class='mu'>Código ou quantidade inválidos. Nada foi gravado.</div>");return}
+ b=bal()[i];const mn=MIN[c]||0;
+ const avGrav=REG_GRAVOU?"":"<div class='neg'><b>⚠ NÃO gravado neste aparelho (armazenamento cheio ou indisponível).</b> Exporte um backup agora: se a página for recarregada, este movimento se perde.</div>";
  audit("MOVIMENTAÇÃO",c,TN[mode]+" "+qty+" un. · "+p[1]+" · "+(p[2]||"—")+" · aparelho "+aparelhoId());
  if(typeof alertas==="function")alertas();
  hit(c);beep(true);
- card(mode==="out"?"okout":"","<h3>"+(mode==="out"?"⬇ Baixa registrada":"⬆ Entrada registrada")+" · "+qty+" un.</h3><div><b>"+esc(p[1])+"</b></div><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Saldo atual</div><div class='big"+(b<0?" neg":"")+"'>"+b+"</div>"+(b<0?"<div class='neg'><b>⚠ Saldo negativo</b></div>":b===0?"<div><b>⚠ Estoque zerado</b></div>":mn&&b<=mn?"<div class='neg'><b>⚠ Abaixo do mínimo ("+mn+")</b></div>":""));
+ card(mode==="out"?"okout":"","<h3>"+(mode==="out"?"⬇ Baixa registrada":"⬆ Entrada registrada")+" · "+qty+" un.</h3><div><b>"+esc(p[1])+"</b></div><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Saldo atual</div><div class='big"+(b<0?" neg":"")+"'>"+b+"</div>"+(b<0?"<div class='neg'><b>⚠ Saldo negativo</b></div>":b===0?"<div><b>⚠ Estoque zerado</b></div>":mn&&b<=mn?"<div class='neg'><b>⚠ Abaixo do mínimo ("+mn+")</b></div>":"")+avGrav);
  draw()}
 
 /* ===== ETAPA 3 — Movimentações confiáveis e sincronização ===== */
@@ -467,33 +496,40 @@ async function buscarProdutosServidor(termo,pag){
 }
 /* põe a movimentação na fila (id único é o que impede duplicidade no reenvio) */
 function enfileirar(m){
- if(!m||!m.id)return;
- if(FILA.some(x=>x.id===m.id))return;
+ if(!m||!m.id)return false;
+ if(FILA.some(x=>x.id===m.id))return true;
  FILA.push(Object.assign({},m,{aparelho:m.aparelho||aparelhoId()}));
- sF();syncStatus();
+ const ok=sF();syncStatus();
+ return ok;   /* A5: informa se a fila foi mesmo gravada */
 }
 /* remove da fila só o que o servidor confirmou */
 function confirmar(ids){
  const set=new Set(ids||[]);
  FILA=FILA.filter(m=>!set.has(m.id));
+ let mudou=false;M.forEach(m=>{if(set.has(m.id)&&m.status!=="confirmado"){m.status="confirmado";mudou=true}});
+ if(mudou)sM();
  sF();syncStatus();
 }
+/* campos que existem só neste aparelho: NÃO vão ao servidor (o servidor não foi auditado e pode recusar campo desconhecido) */
+const SO_LOCAL=["status","stMotivo","origem"];
+function paraEnvio(m){const o=Object.assign({},m,{aparelho:m.aparelho||aparelhoId()});SO_LOCAL.forEach(k=>delete o[k]);return o}
 /* envia o lote; devolve o resultado do servidor */
 async function enviarLote(movs){
- const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/movimentos",{
-  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs})});
+ const r=await fetchT(SYNC.url.replace(/\/$/,"")+"/api/movimentos",{
+  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs})},20000);
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
  return j;
 }
 /* recebe do servidor o que outros aparelhos registraram e junta sem duplicar */
 async function receberNovidades(){
- const r=await fetch(SYNC.url.replace(/\/$/,"")+"/api/estado?desde="+(SYNC.desde||0),{headers:syncHeaders()});
+ const r=await fetchT(SYNC.url.replace(/\/$/,"")+"/api/estado?desde="+(SYNC.desde||0),{headers:syncHeaders()},20000);
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
  let novos=0;
  (j.movimentos||[]).forEach(m=>{
   if(M.some(x=>x.id===m.id))return;
+  if(!m.status)m.status="confirmado";if(!m.origem)m.origem="outro aparelho (servidor)";
   M.push(m);novos++;
  });
  if(novos){sM();reidx()}
@@ -501,19 +537,34 @@ async function receberNovidades(){
  return novos;
 }
 /* sincronização completa: envia pendentes e depois busca novidades */
-async function sincronizar(opts){
+/* ATUALIZAÇÃO 03: só um envio por vez (timer, "online" e botão não disparam o mesmo lote ao mesmo tempo) */
+let SYNC_EM=null;
+function sincronizar(opts){
+ if(SYNC_EM)return SYNC_EM;
+ SYNC_EM=sincronizarUma(opts).finally(()=>{SYNC_EM=null});
+ return SYNC_EM}
+/* tempo limite: servidor lento não deixa o envio preso para sempre; o lote continua na fila e o reenvio usa os MESMOS ids */
+function fetchT(url,opts,ms){
+ if(typeof AbortController==="undefined")return fetch(url,opts);
+ const ac=new AbortController(),t=setTimeout(()=>ac.abort(),ms||20000);
+ return fetch(url,Object.assign({},opts,{signal:ac.signal}))
+  .catch(e=>{throw(e&&e.name==="AbortError")?new Error("tempo esgotado: o servidor demorou a responder"):e})
+  .finally(()=>clearTimeout(t))}
+async function sincronizarUma(opts){
  if(!syncAtivo()){syncStatus();return{ok:false,motivo:"desligado"}}
  const botao=$("syB");if(botao)botao.disabled=true;
  try{
   let confirmados=0,recusados=0;
   if(FILA.length){
-   const j=await enviarLote(FILA.map(m=>Object.assign({},m,{aparelho:m.aparelho||aparelhoId()})));
+   const j=await enviarLote(FILA.map(paraEnvio));
    confirmar(j.confirmados||[]);
    confirmados=(j.confirmados||[]).length;
    recusados=(j.recusados||[]).length;
    /* recusado pelo servidor sai da fila e vira aviso: não pode ficar preso para sempre */
    if(recusados){
     const ids=new Set((j.recusados||[]).map(x=>x.id));
+    /* A3: o registro continua no histórico, marcado como recusado (sai do saldo e vira divergência) */
+    M.forEach(m=>{if(ids.has(m.id)){const x=(j.recusados||[]).find(r=>r.id===m.id);m.status="recusado";m.stMotivo=(x&&x.motivo)||"motivo não informado"}});sM();draw();
     FILA=FILA.filter(m=>!ids.has(m.id));sF();
     (j.recusados||[]).forEach(x=>avisar("Operação recusada pelo servidor: "+(x.motivo||"motivo não informado"),{alvo:x.id}));
    }
@@ -588,9 +639,9 @@ function histFiltrado(){
 function histCSV(){
  const L=histFiltrado();
  if(!L.length){toast("Nenhuma movimentação no filtro atual.",true);return 0}
- const linhas=[["Data e hora","Tipo","Codigo","Produto","Cor","Quantidade","Operador","Login","Aparelho"]];
+ const linhas=[["Data e hora","Tipo","Codigo","Produto","Cor","Quantidade","Operador","Login","Aparelho","Status","Origem"]];
  L.forEach(m=>{const p=PP[idx[m.c]];
-  linhas.push([fmt(m.ts),m.est?"ESTORNO":TN[m.t],m.c,p?p[1]:"",p?p[2]:"",m.q,m.o||"",m.u||"",m.aparelho||""])});
+  linhas.push([fmt(m.ts),m.est?"ESTORNO":TN[m.t],m.c,p?p[1]:"",p?p[2]:"",m.q,m.o||"",m.u||"",m.aparelho||"",m.status||"",m.origem||""])});
  csv("historico_mdo_"+new Date().toISOString().slice(0,10)+".csv",linhas);
  audit("EXPORTAÇÃO",'histórico',L.length+" linhas");
  return L.length;
@@ -806,6 +857,12 @@ function opDados(){
   const orig=M.find(x=>x.id===m.est);
   if(orig&&orig.u!==m.u)divergencias.push({tipo:"estorno de outro operador",codigo:m.c,nome:nomeP(m.c),detalhe:(m.o||m.u)+" estornou "+(orig.o||orig.u)});
  });
+ /* A1: movimentos que ficaram fora do saldo continuam no histórico e são mostrados aqui, nunca apagados */
+ M.filter(vivo).forEach(m=>{
+  if(m.status==="recusado")divergencias.push({tipo:"recusado pelo servidor (fora do saldo)",codigo:String(m.c),nome:nomeP(m.c),detalhe:(TN[m.t]||m.t)+" "+m.q+" · "+(m.stMotivo||"sem motivo")+" · id "+(m.id||"?")});
+  if(idx[m.c]==null)divergencias.push({tipo:"código fora do cadastro (fora do saldo)",codigo:String(m.c),nome:String(m.c),detalhe:(TN[m.t]||m.t)+" "+m.q+" · id "+(m.id||"?")});
+  else if(qVal(m)==null)divergencias.push({tipo:"quantidade inválida (fora do saldo)",codigo:m.c,nome:nomeP(m.c),detalhe:(TN[m.t]||m.t)+" · qtd "+String(m.q)+" · id "+(m.id||"?")});
+ });
  const vistos=new Set(),unicas=[];
  divergencias.forEach(x=>{const k=x.tipo+"|"+x.codigo+"|"+x.detalhe;if(vistos.has(k))return;vistos.add(k);unicas.push(x)});
  return{periodo:OPC.dias,movs,operadores:Object.values(porOperador).sort((a,b2)=>b2.total-a.total),divergencias:unicas};
@@ -838,44 +895,74 @@ function drawOperadores(){
  }
 }
 /* 7.1 — inventário com responsável, divergências e histórico */
-let INV={ativo:false,resp:"",ini:0,itens:{},hist:[]};
-function invSalvar(){sP("inv",INV)}
+/* ===== ATUALIZAÇÃO 06 — Inventário físico =====
+   Fluxo: iniciar (admin) → contar bipando (+1 por leitura) → revisar → concluir → ajustar divergências (admin, uma a uma ou todas, com confirmação).
+   Contar NUNCA mexe no saldo. O estado fica salvo (mdo_inv) e sobrevive a recarregar a página. */
+const INV0=()=>({ativo:false,status:"",id:"",resp:"",escopo:"",ini:0,itens:{}});
+function normInv(o){const r=Object.assign(INV0(),o&&typeof o==="object"&&!Array.isArray(o)?o:{}),it={};
+ Object.keys(r.itens||{}).forEach(c=>{const v=r.itens[c],q=typeof v==="number"?v:parseInt(v&&v.q,10)||0;if(q>0)it[c]={q,ts:(v&&v.ts)||r.ini||Date.now(),u:(v&&v.u)||"-"}});
+ r.itens=it;if(r.ativo&&r.status!=="pausado")r.status="andamento";return r}
+let INV=normInv(lsOK("inv",{}));
+const INV_GUARD=1200;let INV_ULT={c:"",t:0};
+function invSalvar(){return sP("inv",INV)}
+const invAndamento=()=>INV.ativo&&INV.status==="andamento";
+/* uma leitura = exatamente 1 unidade; o mesmo código dentro de INV_GUARD ms é descartado (leitura dupla acidental); depois disso, repetir é intencional */
+function invContar(c){
+ if(!invAndamento()||!cur)return null;
+ const t=Date.now();
+ if(INV_ULT.c===c&&t-INV_ULT.t<INV_GUARD)return{dup:true};
+ INV_ULT={c,t};
+ const it=INV.itens[c]||(INV.itens[c]={q:0,ts:t,u:cur.l});
+ it.q+=1;it.ts=t;it.u=cur.l;invSalvar();return{q:it.q}}
+function invResumo(){const b=bal();
+ return Object.keys(INV.itens||{}).map(c=>{const i=idx[c],contado=INV.itens[c].q,sis=i==null?0:b[i];
+  return{codigo:c,modelo:i==null?"(fora do cadastro)":PP[i][1],cor:i==null?"":PP[i][2],contado,sistema:sis,dif:contado-sis}})}
 function invIniciar(){
- if(!isA())return toast("Só o administrador inicia um inventário.",true);
- const r=prompt("Responsável pelo inventário:",cur.n);
- if(!r)return;
- INV={ativo:true,resp:String(r).trim(),ini:Date.now(),itens:{},hist:ls("mdo_invh",[])};
- invSalvar();audit("INVENTÁRIO INICIADO","",INV.resp);drawRel();toast("Inventário iniciado. Use o modo Contagem na aba Bipar.")}
-function invContar(c,q){
- if(!INV.ativo)return;
- INV.itens[c]=(INV.itens[c]||0)+(q||1);
- invSalvar();
-}
-function invResumo(){
- const b=bal();
- return Object.keys(INV.itens||{}).map(c=>{
-  const i=idx[c],contado=INV.itens[c],sistema=i==null?0:b[i];
-  return{codigo:c,modelo:i==null?"(fora do cadastro)":PP[i][1],cor:i==null?"":PP[i][2],contado,sistema,dif:contado-sistema};
- });
-}
+ if(!adminOK())return;
+ if(INV.ativo)return toast("Já existe um inventário "+(INV.status==="pausado"?"pausado":"em andamento")+". Retome, conclua ou cancele antes de iniciar outro.",true);
+ const r=prompt("Responsável pelo inventário:",cur.n);if(!r||!String(r).trim())return;
+ const es=prompt("Escopo ou local (opcional, ex.: Prateleira A):","");if(es===null)return;
+ INV=Object.assign(INV0(),{ativo:true,status:"andamento",id:uid(),resp:String(r).trim(),escopo:String(es).trim(),ini:Date.now()});INV_ULT={c:"",t:0};
+ const velho=Object.keys(CNT||{}).filter(c=>idx[c]!=null);
+ if(velho.length&&confirm("Há uma contagem antiga de "+velho.length+" produto(s) neste aparelho. Incluí-la neste inventário?\n\nOK = incluir · Cancelar = ignorar (ela continua guardada)")){
+  velho.forEach(c=>{INV.itens[c]={q:CNT[c].q,ts:CNT[c].ts||Date.now(),u:CNT[c].l||"-"}});CNT={};sC()}
+ invSalvar();audit("INVENTÁRIO INICIADO",INV.id,INV.resp+(INV.escopo?" · escopo: "+INV.escopo:""));toast("Inventário iniciado. Use o modo Contagem na aba Bipar.")}
+function invEstado(novo){if(!adminOK()||!INV.ativo)return;
+ INV.status=novo;invSalvar();audit(novo==="pausado"?"INVENTÁRIO PAUSADO":"INVENTÁRIO RETOMADO",INV.id,Object.keys(INV.itens).length+" produto(s)")}
+function invCancelar(){if(!adminOK()||!INV.ativo)return;
+ const n=Object.keys(INV.itens).length;
+ if(!confirm("Cancelar o inventário de "+INV.resp+"?\n\n"+n+" produto(s) contado(s) serão descartados. O estoque não foi alterado e não será."))return;
+ audit("INVENTÁRIO CANCELADO",INV.id,INV.resp+" · "+n+" produto(s) descartados");INV=INV0();invSalvar()}
+function invCorrigir(c,a){if(!adminOK()||!INV.ativo||!INV.itens[c])return;
+ const it=INV.itens[c],de=it.q;
+ if(a==="invZero"&&!confirm("Remover a contagem de "+nomeP(c)+" ("+de+" un.)?"))return;
+ it.q=a==="invMais"?de+1:a==="invMenos"?de-1:0;if(it.q<=0)delete INV.itens[c];
+ invSalvar();audit("INVENTÁRIO CORREÇÃO",c,de+" → "+(INV.itens[c]?INV.itens[c].q:0))}
 function invConcluir(){
- if(!isA())return;
- /* a contagem é feita no modo Contagem; se só houver CNT, ele é o inventário */
- if(!Object.keys(INV.itens||{}).length&&Object.keys(CNT||{}).length)INV.itens=Object.assign({},CNT);
+ if(!adminOK()||!INV.ativo)return;
  const r=invResumo();
  if(!r.length)return toast("Nada contado ainda.",true);
  const div=r.filter(x=>x.dif!==0);
- if(!confirm("Concluir o inventário de "+INV.resp+"?\n\n"+r.length+" produto(s) contado(s), "+div.length+" com divergência.\nO estoque NÃO muda agora: o ajuste precisa da sua confirmação em seguida."))return;
+ if(!confirm("Concluir o inventário de "+INV.resp+"?\n\n"+r.length+" produto(s) contado(s), "+div.length+" com divergência.\nO estoque NÃO muda agora: cada ajuste precisa da sua confirmação em seguida."))return;
  const hist=ls("mdo_invh",[]);
- hist.push({id:uid(),resp:INV.resp,ini:INV.ini,fim:Date.now(),itens:r});
+ hist.push({id:INV.id||uid(),resp:INV.resp,escopo:INV.escopo,ini:INV.ini,fim:Date.now(),por:cur.l,itens:r.map(x=>Object.assign({adj:null},x))});
  sP("invh",hist);
- try{localStorage.setItem("mdo_invh",JSON.stringify(hist))}catch(e){}
- INV.hist=hist;
- /* o que foi concluído sai da contagem corrente: o próximo inventário começa zerado */
- CNT={};sC();
- audit("INVENTÁRIO CONCLUÍDO","",INV.resp+" · "+r.length+" itens · "+div.length+" divergências");
- INV.ativo=false;invSalvar();drawRel();
-}
+ audit("INVENTÁRIO CONCLUÍDO",INV.id,INV.resp+" · "+r.length+" itens · "+div.length+" divergências");
+ INV=INV0();invSalvar()}
+/* ajuste explícito: só admin, contra o saldo de AGORA, um movimento "adj" com observação e auditoria; não repete */
+function invAjustar(hid,codigo){
+ if(!adminOK())return{ok:false,erro:"Sem permissão."};
+ const hist=ls("mdo_invh",[]),h=hist.find(x=>x.id===hid);if(!h)return{ok:false,erro:"Inventário não encontrado."};
+ const it=h.itens.find(x=>x.codigo===codigo);if(!it)return{ok:false,erro:"Item não encontrado."};
+ if(it.adj)return{ok:false,erro:"Esse item já foi ajustado."};
+ const i=idx[codigo];if(i==null)return{ok:false,erro:"Produto fora do cadastro."};
+ const atual=bal()[i],d=it.contado-atual;
+ if(d!==0&&!reg("adj",codigo,d,{obs:"Inventário "+h.id+" · contado "+it.contado+" · saldo "+atual,origem:"inventário"}))return{ok:false,erro:"Movimento recusado."};
+ it.adj={ts:Date.now(),por:cur.l,qtd:d,antes:atual};sP("invh",hist);
+ audit("AJUSTE DE INVENTÁRIO",codigo,"contado "+it.contado+" · saldo "+atual+" · ajuste "+(d>0?"+":"")+d);
+ return{ok:true,d}}
+function invAjustarTodos(hid){const h=ls("mdo_invh",[]).find(x=>x.id===hid);let n=0;
+ if(h)h.itens.filter(x=>x.dif!==0&&!x.adj).forEach(x=>{if(invAjustar(hid,x.codigo).ok)n++});return n}
 /* ===== 7.5 — Alertas e automações =====
    Regras: nunca repetir o mesmo aviso no mesmo dia; cada alerta tem um código fixo,
    então quando a situação melhora o aviso anterior é marcado como resolvido. */
@@ -1206,7 +1293,7 @@ function trocaObrigServidor(l,atual){
  $("lgE").textContent="";$("lgP").value="";$("lgP").type="password";$("lgS").style.display="block";b.disabled=false;b.textContent="Salvar nova senha";
  b.onclick=async()=>{
   const nova=$("lgP").value;
-  if(nova.length<6){$("lgE").textContent="A senha precisa ter pelo menos 6 caracteres.";return}
+  const ev=senhaErro(nova,l)||(nova===atual?"A nova senha não pode ser igual à provisória.":"");if(ev){$("lgE").textContent=ev;return}
   b.disabled=true;
   try{
    const j=await apiContas("trocarSenha",{login:l,senhaAtual:atual,novaSenha:nova});
@@ -1526,7 +1613,7 @@ function draw(){if(!cur)return;
  $("tP").textContent=PP.length;$("tN").textContent=z;$("tQ").textContent=t;$("lst").innerHTML=h||'<div class="mu">Nada encontrado.</div>';
  drawPainel();drawBusca();
  const L=histFiltrado();
- $("log").innerHTML=L.map(m=>{const p=PP[idx[m.c]],sg=m.t==="out"?"−"+m.q:(m.q>0?"+":"")+m.q;return'<div class="item"><span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+'</span> <b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+esc(m.o)+' · '+fmt(m.ts)+(m.ap?' · aprov. '+esc(m.ap):'')+(m.obs?' · '+esc(m.obs):'')+'</span></span><b>'+sg+'</b></div>'}).join("")||'<div class="mu">Sem movimentações.</div>';
+ $("log").innerHTML=L.map(m=>{const p=PP[idx[m.c]],sg=m.t==="out"?"−"+m.q:(m.q>0?"+":"")+m.q;return'<div class="item"><span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+'</span> <b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+esc(m.o)+' · '+fmt(m.ts)+(m.ap?' · aprov. '+esc(m.ap):'')+(m.obs?' · '+esc(m.obs):'')+(m.origem?' · '+esc(m.origem):'')+(m.status?' · '+(m.status==="recusado"?'⛔ recusado'+(m.stMotivo?' ('+esc(m.stMotivo)+')':''):m.status==="confirmado"?'✔ confirmado':'⏳ '+esc(m.status)):'')+'</span></span><b>'+sg+'</b></div>'}).join("")||'<div class="mu">Sem movimentações.</div>';
  if(isA())drawAdm()}
 $("lst").onclick=e=>{const it=e.target.closest(".item");if(!it||!isA())return;const c=it.dataset.c;if(idx[c]==null)return;
  const v=prompt("Estoque mínimo (alerta) para "+PP[idx[c]][1]+". 0 = sem alerta:",MIN[c]||0);if(v===null)return;
@@ -1542,16 +1629,26 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
  let h='<div class="card"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
  h+='<div class="card"><h3>⚠ Abaixo do mínimo ('+low.length+')</h3>'+low.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+'<div class="mu">Toque num produto da aba Estoque para definir o mínimo.</div>'+(low.length?'<button type="button" class="btn ghost" data-a="wa">📲 Enviar alerta pelo WhatsApp</button>':'')+'</div>';
- h+='<div class="card"><h3>👥 Usuários</h3>'+U.map((u,i)=>{const st=u.st==="bloq"?" · bloqueado":u.st==="desat"?" · desativado":u.temp?" · troca de senha pendente":"";
-  return'<div class="item"><span><b>'+esc(u.n)+'</b><span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+st+'</span></span><span><button type="button" class="pill" data-a="pw" data-i="'+i+'">Senha</button> '+(u.st==="bloq"?'<button type="button" class="pill" data-a="ub" data-i="'+i+'">Desbloquear</button> ':'')+(u.st!=="desat"&&u.l!==cur.l?'<button type="button" class="pill n" data-a="du" data-i="'+i+'">Desativar</button> ':'')+(u.st==="desat"?'<button type="button" class="pill" data-a="ua" data-i="'+i+'">Reativar</button>':'')+'</span></div>'}).join("")+
- '<input class="in" id="nuN" placeholder="Nome completo" autocomplete="name"><input class="in" id="nuL" placeholder="Login" autocapitalize="none"><input class="in" id="nuP" type="password" placeholder="Senha provisória (mín. 6)"><select class="in" id="nuR"><option value="op">Operador</option><option value="admin">Administrador</option></select><button type="button" class="btn" data-a="au">+ Criar usuário</button></div>';
- h+='<div class="card"><h3>📦 Inventário</h3><div class="mu">'+(INV.ativo?'Em andamento · responsável: '+esc(INV.resp)+' · '+Object.keys(INV.itens||{}).length+' produto(s) contado(s)':'Nenhum inventário em andamento.')+'</div>'+
-  '<button type="button" class="btn" data-a="invIni">'+(INV.ativo?'🔄 Reiniciar inventário':'📦 Iniciar inventário')+'</button>'+
-  (INV.ativo?'<button type="button" class="btn ghost" data-a="invFim">✅ Concluir e ver divergências</button>':'')+
-  ((ls("mdo_invh",[]).length)?'<button type="button" class="btn ghost" data-a="invHist">🕘 Histórico de inventários</button>':'')+'</div>';
- h+='<div class="card"><h3>📋 Contagem de inventário</h3><div class="mu">Use o modo "Contagem" na aba Bipar e bipe cada peça.</div>'+cn.map(c=>{const i=idx[c],d=CNT[c].q-b[i];return'<div class="item"><span>'+esc(PP[i][1])+' '+esc(PP[i][2])+'<span class="mu">Contado '+CNT[c].q+' · Sistema '+b[i]+'</span></span><span><button type="button" class="pill" data-a="cm" data-i="'+esc(c)+'">−</button> <span class="pill '+(d?'n':'')+'">'+(d>0?'+':'')+d+'</span></span></div>'}).join("")+
- (cn.length?'<button type="button" class="btn" data-a="ap">Aplicar ajustes ao estoque</button><button type="button" class="btn ghost" data-a="cc">Limpar contagem</button>':'')+
- (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
+ if(!contasAtivas()){const rowU=(u,i)=>{const eu=u.l===cur.l,st=u.st==="pend"?" · ⏳ aguardando aprovação":u.st==="bloq"?" · 🔴 bloqueado":u.st==="desat"?" · ⚪ desativado":u.temp?" · troca de senha pendente":"";
+  const B=(a,t,c)=>'<button type="button" class="pill'+(c||"")+'" data-a="'+a+'" data-i="'+i+'">'+t+'</button> ';
+  return'<div class="item"><span><b>'+esc(u.n)+'</b><span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+st+'</span></span><span>'+
+   (u.st==="pend"?B("uap","Aprovar"):"")+(u.st==="bloq"?B("ub","Desbloquear"):"")+(u.st==="desat"?B("ua","Reativar"):"")+
+   (!eu&&u.st==="ativo"?B("ubl","Bloquear"," n"):"")+(!eu&&u.st!=="desat"?B("du","Desativar"," n"):"")+(u.st!=="desat"?B("pw","Senha provisória"):"")+
+   (!eu&&u.st==="ativo"?B("upr",u.r==="admin"?"Tornar operador":"Tornar admin"):"")+'</span></div>'};
+  h+='<div class="card"><h3>👥 Usuários ('+U.length+')</h3><div class="mu">Novos operadores se cadastram na tela inicial e aparecem aqui como pendentes. A senha atual nunca é exibida.</div>'+
+   U.map((u,i)=>[u,i]).sort((a,b)=>(b[0].st==="pend")-(a[0].st==="pend")).map(([u,i])=>rowU(u,i)).join("")+'</div>'}
+ {const rs=INV.ativo?invResumo():[],tot=rs.reduce((t,x)=>t+x.contado,0);
+ const bt=(a,t,i,c)=>'<button type="button" class="'+(c||"pill")+'" data-a="'+a+'"'+(i!=null?' data-i="'+esc(i)+'"':'')+'>'+t+'</button> ';
+ h+='<div class="card"><h3>📦 Inventário</h3><div class="mu">'+(INV.ativo?(INV.status==="pausado"?"⏸ Pausado":"▶ Em andamento")+' · responsável: '+esc(INV.resp)+(INV.escopo?' · escopo: '+esc(INV.escopo):'')+' · início '+fmt(INV.ini)+' · '+rs.length+' produto(s), '+tot+' un. contadas':'Nenhum inventário em andamento.')+'</div>'+
+  '<div class="mu">Contar não altera o estoque. Divergências só mudam o saldo com ajuste confirmado por você.</div>'+
+  (!INV.ativo?bt("invIni","📦 Iniciar inventário",null,"btn"):bt(INV.status==="pausado"?"invRet":"invPaus",INV.status==="pausado"?"▶ Retomar":"⏸ Pausar",null,"btn ghost")+bt("invFim","✅ Concluir e ver divergências",null,"btn")+bt("invCanc","✖ Cancelar inventário",null,"btn red"))+
+  (ls("mdo_invh",[]).length?bt("invHist","🕘 Histórico de inventários",null,"btn ghost"):'')+'</div>';
+ if(INV.ativo)h+='<div class="card"><h3>📋 Contagem e divergências</h3>'+(rs.map(x=>'<div class="item"><span><b>'+esc(x.modelo)+' '+esc(x.cor)+'</b><span class="mu">'+esc(x.codigo)+' · contado '+x.contado+' · registrado '+x.sistema+' · dif '+(x.dif>0?'+':'')+x.dif+'</span></span><span>'+bt("invMenos","−",x.codigo)+bt("invMais","+",x.codigo)+bt("invZero","🗑",x.codigo," pill n")+'</span></div>').join("")||'<div class="mu">Nenhum item bipado ainda. Use o modo Contagem na aba Bipar.</div>')+'</div>';
+ const hh=ls("mdo_invh",[]),ult=hh[hh.length-1];
+ if(ult){const bb=bal(),pend=ult.itens.filter(x=>x.dif!==0&&!x.adj);
+  h+='<div class="card"><h3>🧾 Último inventário concluído</h3><div class="mu">'+fmt(ult.fim)+' · '+esc(ult.resp)+(ult.escopo?' · '+esc(ult.escopo):'')+' · '+ult.itens.length+' itens · '+pend.length+' divergência(s) sem ajuste</div>'+
+   ult.itens.filter(x=>x.dif!==0).map(x=>{const k=idx[x.codigo];return'<div class="item"><span><b>'+esc(x.modelo)+' '+esc(x.cor)+'</b><span class="mu">'+esc(x.codigo)+' · contado '+x.contado+' · registrado '+x.sistema+' · dif '+(x.dif>0?'+':'')+x.dif+' · saldo hoje '+(k==null?"—":bb[k])+(x.adj?' · ✅ ajustado por '+esc(x.adj.por)+' em '+fmt(x.adj.ts):'')+'</span></span>'+(x.adj?'':bt("invAj","Ajustar",ult.id+"|"+x.codigo))+'</div>'}).join("")+
+   (pend.length?bt("invAjTudo","Ajustar todas ("+pend.length+")",ult.id,"btn"):'')+'</div>'}}
  h+='<div class="card"><h3>🕵 Auditoria (últimos 30)</h3>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></div>';
  h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){
    const todos=ls(avKey,[]),av=todos.filter(a=>a.lido!==true&&!a.resolvido);
@@ -1585,7 +1682,7 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  h+='<div id="opRel"></div>';
  h+='<div id="pbi"></div>';
  h+='<div id="rel"></div>';
- h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Apagar movimentações deste aparelho</button></div>';
+ h+='<div class="card"><h3>🗂 Dados</h3><button type="button" class="btn" data-a="imp">📥 Importar planilha de produtos (.xlsx/.csv)</button><button type="button" class="btn ghost" data-a="exL">⬇ Exportar Log (CSV)</button><button type="button" class="btn ghost" data-a="exE">⬇ Exportar Estoque atual (CSV)</button><button type="button" class="btn ghost" data-a="bk">💾 Baixar backup (JSON)</button><button type="button" class="btn ghost" data-a="bi">♻ Importar/mesclar backup de outro aparelho</button><label class="mu" style="display:block;margin:10px 0"><input type="checkbox" id="abT" '+(ls(K.ab,true)?"checked":"")+'> Backup automático diário ao entrar</label><button type="button" class="btn red" data-a="clr">🗑 Ocultar movimentações deste aparelho (mantém o original)</button></div>';
  $("adm").innerHTML=h;
  $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
@@ -1594,21 +1691,29 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
 $("adm").onclick=e=>{const x=e.target.closest("[data-a]");if(!x)return;
  const a=x.dataset.a,i=x.dataset.i;
- act(a,a==="cm"?i:+i)};
+ act(a,x.dataset.l!=null?x.dataset.l:((a==="cm"||a.indexOf("inv")===0)?i:+i))};
+/* ATUALIZAÇÃO 05 — confere de novo, a cada ação, o papel gravado (não só o que está na memória da tela). Com servidor, quem autoriza é a API. */
+function adminOK(){
+ if(!cur||cur.r!=="admin")return false;
+ const f=ls(K.u,[]).find(x=>x&&x.l===cur.l);
+ if(!f||f.r!=="admin"||f.st==="desat"||f.st==="bloq"||f.st==="pend"){toast("Sem permissão para esta ação.",true);return false}
+ return true}
 async function act(a,i){
- if(!isA()&&a!=="av")return;
+ if(a!=="av"&&!adminOK())return;
  if(a==="ctListar"){apiContas("listar").then(j=>{
    const alvo=$("ctL");if(!alvo)return;
    if(!j.ok){alvo.innerHTML='<div class="mu">'+esc(j.erro||"Falhou")+'</div>';return}
    alvo.innerHTML=(j.usuarios||[]).map(u=>'<div class="item"><span><b>'+esc(u.n)+'</b> <span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+' · '+
-    (u.st==="bloq"?"🔴 bloqueado":u.st==="desat"?"⚪ desativado":"🟢 ativo")+(u.temp?" · senha provisória":"")+'</span></span><span>'+
+    (u.st==="pend"?"⏳ pendente":u.st==="bloq"?"🔴 bloqueado":u.st==="desat"?"⚪ desativado":"🟢 ativo")+(u.temp?" · senha provisória":"")+'</span></span><span>'+
     (u.st==="bloq"?'<button type="button" class="btn ghost" data-a="ctDesb" data-l="'+esc(u.l)+'">Desbloquear</button>':'')+
     (u.st==="desat"?'<button type="button" class="btn ghost" data-a="ctReat" data-l="'+esc(u.l)+'">Reativar</button>':'')+
+    (u.st==="pend"?'<button type="button" class="btn ghost" data-a="ctAprov" data-l="'+esc(u.l)+'">Aprovar</button>':'')+
+    (u.st==="ativo"?'<button type="button" class="btn ghost" data-a="ctBloq" data-l="'+esc(u.l)+'">Bloquear</button>':'')+
     (u.st==="ativo"?'<button type="button" class="btn ghost" data-a="ctDesat" data-l="'+esc(u.l)+'">Desativar</button>':'')+
     '<button type="button" class="btn ghost" data-a="ctSenha" data-l="'+esc(u.l)+'">Senha provisória</button></span></div>').join("")||'<div class="mu">Nenhuma conta no servidor ainda.</div>';
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
- if(a==="ctDesb"||a==="ctReat"||a==="ctDesat"||a==="ctSenha"){
-  const acaoMap={ctDesb:"desbloquear",ctReat:"reativar",ctDesat:"desativar",ctSenha:"senhaProvisoria"};
+ if(a==="ctDesb"||a==="ctReat"||a==="ctDesat"||a==="ctSenha"||a==="ctAprov"||a==="ctBloq"){
+  const acaoMap={ctAprov:"aprovar",ctBloq:"bloquear",ctDesb:"desbloquear",ctReat:"reativar",ctDesat:"desativar",ctSenha:"senhaProvisoria"};
   apiContas(acaoMap[a],{login:i}).then(j=>{
    if(!j.ok)return toast(j.erro||"Falhou",true);
    if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
@@ -1632,8 +1737,10 @@ async function act(a,i){
   CAMDIAG.aparelho="";CAMDIAG.leitor="";CAMDIAG.zoomMax=0;CAMDIAG.digital=0;CAMDIAG.lidas=0;CAMDIAG.falhas=0;CAMDIAG.ultima=0;
   camDiagSalvar();audit("DIAGNÓSTICO DA CÂMERA","zerado");
   const el=$("camD");if(el)el.textContent=camDiagTexto();return}
- if(a==="invIni"){invIniciar();return}
- if(a==="invFim"){invConcluir();return}
+ if(a==="invIni"){invIniciar();draw();return}
+ if(a==="invFim"){invConcluir();draw();return}
+ if(a==="invPaus"||a==="invRet"){invEstado(a==="invPaus"?"pausado":"andamento");draw();return}
+ if(a==="invCanc"){invCancelar();draw();return}
  if(a==="invHist"){
   const hs=ls("mdo_invh",[]).slice().reverse();
   alert(hs.map(x=>fmt(x.fim)+" · "+x.resp+" · "+x.itens.length+" itens · "+x.itens.filter(i=>i.dif!==0).length+" divergências").join("\n")||"Nenhum inventário concluído.");
@@ -1646,40 +1753,41 @@ async function act(a,i){
   syncStatus();if(syncAtivo())sincronizar({silencioso:true});return}
  if(a==="ok"){const r=REQ[i];if(!r)return;
   /* Registra no nome de quem APROVOU, guardando o solicitante no próprio registro */
-  reg("out",r.c,r.q,{ap:cur.l,req:r.o,reqU:r.u});REQ.splice(i,1);sR();audit("APROVAÇÃO",r.c,r.q+" un. pedido por "+r.o)}
+  if(!reg("out",r.c,r.q,{ap:cur.l,req:r.o,reqU:r.u,origem:"aprovação do administrador"})){toast("Não foi possível aprovar: pedido com código ou quantidade inválidos. O pedido foi mantido.",true);return}
+  if(!REG_GRAVOU)toast("⚠ Aprovação registrada só na memória: armazenamento cheio. Exporte um backup agora.",true);
+  REQ.splice(i,1);sR();audit("APROVAÇÃO",r.c,r.q+" un. pedido por "+r.o)}
  else if(a==="no"){const r=REQ[i];REQ.splice(i,1);sR();audit("RECUSA",r?r.c:"",r?r.q+" un.":"")}
  else if(a==="wa"){const b=bal(),t="⚠ Estoque baixo (MDO):\n"+PP.map((p,k)=>[p,b[k]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]).map(([p,v])=>"• "+p[1]+" "+p[2]+": "+v+" (mín. "+MIN[p[0]]+")").join("\n");window.open("https://wa.me/?text="+encodeURIComponent(t),"_blank");return}
  else if(a==="pw"){const u=U[i];if(!u)return;
-  const p=prompt("Senha provisória para "+u.n+" (mín. 6). O operador troca no próximo acesso:",sugerirSenha());
-  if(p===null)return;if(p.length<6)return alert("A senha provisória precisa ter pelo menos 6 caracteres.");
-  u.h=await H(u.l+p);u.temp=p;u.t=0;u.st="ativo";sU();audit("SENHA PROVISÓRIA",u.l);alert("Senha provisória definida. O operador será obrigado a trocá-la ao entrar.");draw();return}
- else if(a==="ub"){const u=U[i];if(!u)return;u.st="ativo";u.t=0;sU();audit("DESBLOQUEIO",u.l)}
+  const p=prompt("Senha provisória para "+u.n+" (mín. 8, letras e números). O usuário troca no próximo acesso:",sugerirSenha());
+  if(p===null)return;const e=senhaErro(p,u.l);if(e)return alert(e);
+  try{Object.assign(u,await mkHash(p))}catch(x){return alert(x.message)}
+  u.temp=true;u.t=0;sU();audit("SENHA PROVISÓRIA",u.l);alert("Senha provisória definida. Informe-a ao usuário; ela não fica visível. Ele será obrigado a trocá-la ao entrar.");draw();return}
+ else if(a==="ub"){const u=U[i];if(!u)return;u.st=u.pend?"pend":"ativo";u.pend=null;u.t=0;sU();audit("DESBLOQUEIO",u.l)}
+ else if(a==="uap"){const u=U[i];if(!u||u.st!=="pend")return;u.st="ativo";u.t=0;sU();audit("APROVAÇÃO DE CADASTRO",u.l)}
+ else if(a==="ubl"){const u=U[i];if(!u||u.l===cur.l||u.st!=="ativo")return;if(confirm("Bloquear "+u.n+"?")){u.st="bloq";u.bloqEm=Date.now();u.pend=null;sU();audit("BLOQUEIO MANUAL",u.l)}}
+ else if(a==="upr"){const u=U[i];if(!u||u.l===cur.l||u.st!=="ativo")return;const ad=u.r==="admin";if(confirm((ad?"Tornar operador: ":"Dar acesso de administrador a ")+u.n+"?")){u.r=ad?"operador":"admin";sU();audit(ad?"REBAIXADO A OPERADOR":"PROMOVIDO A ADMINISTRADOR",u.l)}}
  else if(a==="du"){const u=U[i];if(!u||u.l===cur.l)return;
   if(confirm("Desativar o usuário "+u.n+"? (o histórico dele é mantido)")){u.st="desat";sU();audit("DESATIVAÇÃO",u.l)}}
  else if(a==="ua"){const u=U[i];if(!u)return;u.st="ativo";u.t=0;sU();audit("REATIVAÇÃO",u.l)}
- else if(a==="au"){(async()=>{const n=$("nuN").value.trim(),l=$("nuL").value.trim().toLowerCase(),p=$("nuP").value;
-   if(!nomeOK(n))return alert("Digite nome e sobrenome");
-   if(!l||/\s/.test(l))return alert("Login obrigatório, sem espaços.");
-   if(p.length<6)return alert("A senha provisória precisa ter pelo menos 6 caracteres.");
-   if(U.some(x=>x.l===l))return alert("Esse login já existe.");
-   U.push({l,n,r:$("nuR").value,h:await H(l+p),temp:p,st:"ativo",ts:Date.now()});sU();audit("CADASTRO",l,$("nuR").value);draw()})();return}
- else if(a==="cm"){const c=i;if(CNT[c]==null)return;CNT[c].q=Math.max(0,(CNT[c].q||0)-1);if(!CNT[c].q)delete CNT[c];sC()}
- else if(a==="ap"){if(!confirm("Aplicar a contagem como ajuste de estoque?"))return;
-  const b=bal();let n=0,desc=0;Object.keys(CNT).forEach(c=>{const k=idx[c];if(k==null){desc++;return}const d=CNT[c].q-b[k];if(d){reg("adj",c,d,{obs:"Inventário"});n++}});
-  audit("INVENTÁRIO",n+" ajuste(s)",desc?desc+" código(s) fora do catálogo descartado(s)":"");CNT={};sC();
-  if(desc)alert(desc+" código(s) contado(s) não existem mais no catálogo e foram descartados.")}
- else if(a==="cc"){CNT={};sC()}
+ else if(a==="invMenos"||a==="invMais"||a==="invZero"){invCorrigir(String(i),a)}
+ else if(a==="invAj"){const pr=String(i).split("|");if(!confirm("Ajustar o saldo de "+nomeP(pr[1])+" para a quantidade contada?\n\nIsso altera o estoque e fica registrado na auditoria."))return;const r=invAjustar(pr[0],pr[1]);if(!r.ok)toast(r.erro,true)}
+ else if(a==="invAjTudo"){if(!confirm("Ajustar o saldo de TODAS as divergências pendentes deste inventário para a quantidade contada?\n\nIsso altera o estoque e cada ajuste fica registrado na auditoria."))return;const n=invAjustarTodos(String(i));toast(n+" ajuste(s) aplicado(s).")}
  else if(a==="alCfg"){alertaConfigurar(i,String(b.dataset.v)==="1");return}
  else if(a==="av"){const av=ls(avKey,[]);const v=av.filter(x=>!x.lido&&!x.resolvido)[i];if(v)v.lido=true;sAv(av);draw()}
  else if(a==="imp")return $("imp").click();
  else if(a==="bi")return $("bkI").click();
  else if(a==="bk")return backup();
  else if(a==="exA")return csv("auditoria_mdo.csv",[["Data/Hora","Ação","Alvo","Responsável","Login","Detalhe"]].concat(AUD.map(a=>[fmt(a.ts),a.acao,a.alvo,a.nome,a.por,a.extra])));
- else if(a==="exL")return csv("log_movimentacoes.csv",[["Nº","ID","Tipo","Data/Hora","Operador","Login","Código","Produto","Qtd","Aprovador","Solicitante","Estorno de","Obs."]].concat(M.filter(vivo).map((m,k)=>[k+1,m.id||"",TN[m.t],fmt(m.ts),m.o,m.u||"",m.c,nomeP(m.c),m.q,m.ap||"",m.req||"",m.est||"",m.obs||""])));
+ else if(a==="exL")return csv("log_movimentacoes.csv",[["Nº","ID","Tipo","Data/Hora","Operador","Login","Código","Produto","Qtd","Aprovador","Solicitante","Estorno de","Obs.","Status","Origem","Motivo da recusa"]].concat(M.filter(vivo).map((m,k)=>[k+1,m.id||"",TN[m.t],fmt(m.ts),m.o,m.u||"",m.c,nomeP(m.c),m.q,m.ap||"",m.req||"",m.est||"",m.obs||"",m.status||"",m.origem||"",m.stMotivo||""])));
  else if(a==="exE"){const b=bal();return csv("estoque_atual.csv",[["Código","Descrição","Cor","Estoque inicial","Saldo atual","Mínimo"]].concat(PP.map((p,k)=>[p[0],p[1],p[2],p[3],b[k],MIN[p[0]]||0])))}
- else if(a==="clr"){if(confirm("Apagar TODAS as movimentações deste aparelho? Exporte antes.")){M=[];sM();audit("LIMPEZA","movimentações")}}
+ else if(a==="clr"){const vis=M.filter(vivo).length;
+  if(!vis){toast("Não há movimentações visíveis neste aparelho.",true)}
+  else if(confirm("Ocultar as "+vis+" movimentações deste aparelho?\n\nOs registros ORIGINAIS NÃO são apagados: continuam guardados, entram no backup e seguem para o servidor. Só saem do saldo e das telas. Exporte um backup antes.")){
+   const t=Date.now();M.forEach(m=>{if(!m.del){m.del=t;m.delPor=cur.l}});
+   sM();audit("LIMPEZA","movimentações",vis+" ocultadas (registro original mantido)")}}
  draw()}
-function sugerirSenha(){const a="abcdefghjkmnpqrstuvwxyz",b="23456789";let s="";for(let i=0;i<4;i++)s+=a[Math.floor(Math.random()*a.length)];for(let i=0;i<3;i++)s+=b[Math.floor(Math.random()*b.length)];return s}
+function sugerirSenha(){const a="abcdefghjkmnpqrstuvwxyz",b="23456789",r=n=>{const x=new Uint32Array(1);crypto.getRandomValues(x);return x[0]%n};let s="";for(let i=0;i<6;i++)s+=a[r(a.length)];for(let i=0;i<4;i++)s+=b[r(b.length)];return s}
 function nomeOK(n){const p=String(n||"").trim().split(/\s+/).filter(x=>x.length>=2);return p.length>=2}
 /* Backup: inclui pedidos pendentes, contagem e auditoria; o merge respeita movimentações apagadas */
 function backup(){const d=new Date().toISOString().slice(0,10),u=URL.createObjectURL(new Blob([JSON.stringify({v:3,P:PP,min:MIN,m:M,u:U,req:REQ,cnt:CNT,aud:AUD})],{type:"application/json"})),a=document.createElement("a");a.href=u;a.download="backup_estoque_mdo_"+d+".json";document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(u)},200)}
@@ -1711,7 +1819,7 @@ $("bkI").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)re
    /* usuário que já existe aqui mantém o papel local (backup não rebaixa nem promove) */
    if(ex)return;
    /* usuário novo entra sempre como operador: papel de administrador só é dado na aba Usuários */
-   U.push({l:String(u.l),n:String(u.n||u.l),r:"op",h:String(u.h||""),st:u.st==="desat"?"desat":"ativo",t:0,temp:null});nu++});
+   U.push({l:String(u.l),n:String(u.n||u.l),r:"operador",h:String(u.h||""),s:u.s?String(u.s):undefined,it:u.it,v:u.v===2?2:undefined,st:["desat","bloq","pend"].includes(u.st)?u.st:"ativo",t:0,temp:u.temp?true:null});nu++});
   if(Array.isArray(d.req))d.req.forEach(r=>{if(r&&r.c!=null&&!REQ.some(x=>x.id&&x.id===r.id))REQ.push(r)});
   if(d.cnt&&typeof d.cnt==="object")Object.keys(d.cnt).forEach(c=>{const v=d.cnt[c];if(idx[c]==null)return;
    const q=typeof v==="number"?v:parseInt(v&&v.q,10)||0;if(!CNT[c]||q>CNT[c].q)CNT[c]={q,l:(v&&v.l)||"-",n:(v&&v.n)||"-",ts:(v&&v.ts)||Date.now()}});
@@ -1737,7 +1845,10 @@ $("imp").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)re
 function mode_(m){mode=m;$("mO").classList.toggle("on",m==="out");$("mI").classList.toggle("on",m==="in");$("mC").classList.toggle("on",m==="cnt")}
 $("mO").onclick=()=>mode_("out");$("mI").onclick=()=>mode_("in");$("mC").onclick=()=>mode_("cnt");
 $("qm").onclick=()=>{qty=Math.max(1,qty-1);$("qv").textContent=qty};$("qp").onclick=()=>{qty++;$("qv").textContent=qty};
-$("go").onclick=()=>{initAudio();const v=$("man").value;$("man").value="";$("man").focus();last="";scan(v)};
+let goTrava=0;
+$("go").onclick=()=>{initAudio();const v=$("man").value,agora=Date.now();
+ if(agora-goTrava<600||!String(v).trim())return;   /* ATUALIZAÇÃO 03: toque repetido/Enter repetido não duplica */
+ goTrava=agora;$("man").value="";$("man").focus();last="";scan(v,"manual")};
 $("man").onkeydown=e=>{if(e.key==="Enter")$("go").onclick()};
 $("undo").onclick=()=>{
  const minha=[...M].filter(m=>vivo(m)&&m.u===cur.l&&!m.ap&&!m.est&&m.t!=="adj").pop();
@@ -1769,7 +1880,7 @@ function camErr(e){const n=(e&&e.name)||String(e);
 /* ===== ETAPA 6.1 — diagnóstico da câmera, gravado no próprio aparelho =====
    Serve para o administrador saber, sem adivinhar, o que o aparelho conseguiu fazer:
    leitor usado, zoom de câmera disponível, se o digital completou e quantas leituras deram certo. */
-const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,ultima:0,msAbertura:0,vw:0,vh:0,cw:0,ch:0};
+const CAMDIAG=ls("mdo_camdiag",null)||{aparelho:"",leitor:"",zoomMax:0,digital:0,lidas:0,falhas:0,rep:0,ultima:0,msAbertura:0,vw:0,vh:0,cw:0,ch:0};
 function camDiagSalvar(){CAMDIAG.ultima=Date.now();try{localStorage.setItem("mdo_camdiag",JSON.stringify(CAMDIAG))}catch(e){}}
 function camDiagLer(){return ls("mdo_camdiag",null)}
 /* nome legível do aparelho — só para saber qual é qual ao comparar iPhone e Android */
@@ -1802,7 +1913,7 @@ function camDiagTexto(){
  return "Aparelho: "+(d.aparelho||"—")+" · abertura da câmera: "+(d.msAbertura?d.msAbertura+" ms":"—")+
   " · leitor: "+(d.leitor||"—")+" · zoom de câmera: "+(d.zoomMax>1?d.zoomMax.toFixed(1)+"x":"não exposto")+
   " · ampliação digital: "+(d.digital>1?d.digital.toFixed(1)+"x":"não usada")+" · leituras: "+d.lidas+
-  " · não lidas: "+d.falhas+
+  " · não lidas: "+d.falhas+" · repetições barradas: "+(d.rep||0)+
   " · vídeo: "+((d.vw&&d.vh)?(d.vw+"×"+d.vh):"—")+
   " · visor: "+((d.cw&&d.ch)?(d.cw+"×"+d.ch):"—")+
   (d.ultima?" · último uso: "+fmt(d.ultima):"");
@@ -1844,15 +1955,49 @@ function guardarQuadro(v){
 /* (b) troca de código muito rápida costuma ser leitura errada: só aceita se a confiança for boa */
 /* Anti-duplicado: bloqueia só o MESMO código por pouco tempo; o próximo entra na hora.
    Leitura de confiança baixa logo depois de outra também é descartada (evita falso positivo). */
-const dedupe=t=>{const agora=Date.now();const c=String(t);
+/* ===== ATUALIZAÇÃO 03 — uma leitura física = no máximo uma operação =====
+   Causa do "várias baixas numa bipada": o leitor devolve o MESMO código a cada quadro (até ~30x por segundo)
+   e a regra antiga aceitava o mesmo código de novo a cada 700 ms enquanto a etiqueta estivesse na frente da câmera.
+   Segurar a etiqueta por ~3,5 s = 5 baixas. Agora:
+   (1) enquanto uma leitura está sendo tratada, tudo o que chega é descartado (trava);
+   (2) o MESMO código só vale de novo depois que SAIU da frente da câmera (sem ser visto por AUSENCIA_MS)
+       e depois de COOLDOWN_MS desde a última operação — para registrar outra unidade, afaste e aproxime a etiqueta;
+   (3) código DIFERENTE entra na hora (leitura contínua preservada);
+   (4) quadro e código já usados são descartados (a foto-alternativa não reaproveita o quadro de uma leitura já registrada). */
+const COOLDOWN_MS=1500,AUSENCIA_MS=1500;
+let ultimoVisto=0,procLock=false,ultimoAvisoRep=0,rearme=false,OPS_T={};
+const AVISO_REP="Mesmo código ainda na frente da câmera: já registrado. Afaste a etiqueta e aproxime de novo para registrar outra unidade.";
+function avisoRepetido(){
+ CAMDIAG.rep=(CAMDIAG.rep||0)+1;
+ const agora=Date.now();if(agora-ultimoAvisoRep<3000)return;ultimoAvisoRep=agora;
+ const m=$("camMsg");if(m)m.textContent=AVISO_REP}
+function limpaAvisoRep(){const m=$("camMsg");if(m&&m.textContent===AVISO_REP)m.textContent=""}
+const dedupe=t=>{
+ const agora=Date.now(),c=String(t);
+ const vistoAntes=ultimoVisto;ultimoVisto=agora;      /* toda detecção renova "o código ainda está na frente" */
+ if(procLock)return false;                            /* (1) leitura em tratamento: descarta */
  const fraca=ultimaConf!=null&&ultimaConf<0.45;
- if(c===last){if(agora-lastT<700)return false;lastT=agora;scan(c);lastT=Date.now();camRetomar();return true}
- if(last&&agora-lastT<300&&fraca)return false;   /* leitura duvidosa logo depois de outra: ignora */
- last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(c);lastT=Date.now();camRetomar();return true};
-/* ETAPA 1.5 — Zoom padrão 3,4x ao abrir a câmera.
+ if((agora-(OPS_T[c]||0))<COOLDOWN_MS){if(c===last)avisoRepetido();return false}   /* qualquer código: desbloqueio mínimo desde a última operação dele (cobre A→B→A de leitura instável) */
+ if(c===last){                                        /* (2) mesmo código */
+  if((agora-vistoAntes)>=AUSENCIA_MS)rearme=true;     /* saiu da frente da câmera: rearma (vale assim que o desbloqueio mínimo passar) */
+  if(!rearme){avisoRepetido();return false}
+ }else if(last&&agora-lastT<300&&fraca)return false; /* leitura duvidosa logo depois de outra: ignora */
+ procLock=true;
+ try{
+  rearme=false;last=c;lastT=agora;CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();
+  ULTQUADRO=null;                                     /* (4) neutraliza o quadro desta leitura */
+  limpaAvisoRep();
+  scan(c,"câmera");
+ }finally{
+  const fimT=Date.now();procLock=false;lastT=fimT;ultimoVisto=fimT;   /* conta o desbloqueio a partir do FIM do tratamento */
+  OPS_T[c]=fimT;Object.keys(OPS_T).forEach(k=>{if(fimT-OPS_T[k]>10000)delete OPS_T[k]});
+  camRetomar();
+ }
+ return true};
+/* ETAPA 1.5 — Zoom padrão ao abrir a câmera (decisão do usuário: 2,0x; antes 3,4x).
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
-const ZOOM=3.4;                 /* zoom com que a câmera abre */
+const ZOOM=2.0;                 /* zoom com que a câmera abre (só quando não há zoom salvo pelo operador) */
 let ZOOMATUAL=ls("mdo_zoom",null)||ZOOM;   /* último zoom escolhido na barra, fica salvo */
 function zoomAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.zoom=msg}
 /* aplica o zoom escolhido na barra à câmera que está rodando agora (sem reabrir) */
@@ -1903,7 +2048,7 @@ async function aplicarZoom(stream,box){
  const digitalFalta=Math.max(1,ZOOMATUAL/nativoAplicado);
  if(v){
   v.style.transformOrigin="50% 50%";
-  /* ETAPA 6.1: com zoom de câmera menor que 3,4x, o digital completa (antes a imagem ficava sem) */
+  /* ETAPA 6.1: com zoom de câmera menor que o zoom escolhido, o digital completa (antes a imagem ficava sem) */
   /* (C) com zoom nativo do aparelho, NADA de ampliacao digital: o iPhone expoe ate 10x
      e esticar pixel so piora a leitura do codigo */
   v.style.transform=(zNativo&&max>=ZOOMATUAL)?"":(zNativo?"":("scale("+digitalFalta+")"));
@@ -1998,8 +2143,8 @@ async function startLib(box){
    // html5-qrcode pode usar <canvas>; nesse caso o zoom é aplicado via constraints da track ativa
    const cap=q.getRunningTrackCameraCapabilities&&q.getRunningTrackCameraCapabilities();
    const max=(cap&&cap.zoomFeature&&cap.zoomFeature.isSupported&&cap.zoomFeature.isSupported())?Number(cap.zoomFeature.max&&cap.zoomFeature.max())||0:0;
-   if(max>1){await q.applyVideoConstraints({advanced:[{zoom:Math.min(ZOOM,max)}]});z={nativo:true,max,digital:max<ZOOM};zoomAviso(max<ZOOM?"Zoom de câmera até "+max.toFixed(1)+"x; o restante até 3,4x é ampliação digital.":"")}
-   else if(v){v.style.transformOrigin="50% 50%";v.style.transform="scale("+ZOOM+")";z={nativo:false,max:0,digital:true};zoomAviso("Zoom 3,4x por ampliação digital (este aparelho não expõe zoom de câmera).")}
+   if(max>1){await q.applyVideoConstraints({advanced:[{zoom:Math.min(ZOOMATUAL,max)}]});z={nativo:true,max,digital:max<ZOOMATUAL};zoomAviso(max<ZOOMATUAL?"Zoom de câmera até "+max.toFixed(1)+"x; o restante até "+ZOOMATUAL.toFixed(1).replace(".",",")+"x é ampliação digital.":"")}
+   else if(v){v.style.transformOrigin="50% 50%";v.style.transform="scale("+ZOOMATUAL+")";z={nativo:false,max:0,digital:true};zoomAviso("Zoom "+ZOOMATUAL.toFixed(1).replace(".",",")+"x por ampliação digital (este aparelho não expõe zoom de câmera).")}
   }
  }catch(e){}
  q.mdoZoom=z;
@@ -2015,7 +2160,7 @@ async function startLib(box){
   return{nativo:nat,falta};
  };
  return q}
-$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;
+$("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;ultimoVisto=0;procLock=false;ultimoAvisoRep=0;rearme=false;OPS_T={};
  const t0=(window.performance&&performance.now)?performance.now():Date.now();
  if(sc)return camOff();
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}
@@ -2067,7 +2212,7 @@ $("phBtn").onclick=async()=>{
   if(r.codigo){
    LEIT.origem="foto (quadro da câmera)";
    if($("camMsg"))$("camMsg").textContent="";
-   scan(r.codigo);
+   scan(r.codigo,"foto (quadro da câmera)");
   }else{
    if($("camMsg"))$("camMsg").textContent="";
    $("ph").click();
@@ -2080,10 +2225,10 @@ $("ph").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)ret
  let leitor=null;
  try{
   const nf=await nativeOK();
-  if(nf){try{const bmp=await createImageBitmap(f),r=await new BarcodeDetector({formats:nf}).detect(bmp);bmp.close&&bmp.close();if(r.length){msg.textContent="";return scan(String(r[0].rawValue))}}catch(x){}}
+  if(nf){try{const bmp=await createImageBitmap(f),r=await new BarcodeDetector({formats:nf}).detect(bmp);bmp.close&&bmp.close();if(r.length){msg.textContent="";return scan(String(r[0].rawValue),"foto")}}catch(x){}}
   try{await loadLib("qr")}catch(x){msg.textContent="";beep(false);return alert("Leitor não carregou (sem internet?). Use a câmera ao vivo ou digite o código.")}
   leitor=new Html5Qrcode("hid",{verbose:false});
-  const t=await leitor.scanFile(f,false);msg.textContent="";CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(String(t))}
+  const t=await leitor.scanFile(f,false);msg.textContent="";CAMDIAG.lidas=(CAMDIAG.lidas||0)+1;camDiagSalvar();scan(String(t),"foto")}
  catch(x){beep(false);CAMDIAG.falhas=(CAMDIAG.falhas||0)+1;camDiagSalvar();msg.textContent="Não consegui ler o código na foto. Chegue mais perto, com boa luz, ou digite abaixo."}
  finally{ if(leitor){try{await leitor.clear()}catch(x){}}
   const h=$("hid");if(h)h.innerHTML="" }};
@@ -2178,8 +2323,8 @@ $("cadPh").onchange=e=>{const f=e.target.files[0];e.target.value="";cadPorFoto(f
  marcar();
 })();
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
-{const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"))enter(s);else showLogin()}
+{const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"&&x.st!=="pend"))enter(s);else showLogin()}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.7.0 · 2026-11</div>
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.8.1 · 2026-11</div>
 </body></html>
