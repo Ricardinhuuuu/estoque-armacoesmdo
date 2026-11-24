@@ -170,6 +170,28 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <input type="file" id="imp" accept=".xlsx,.xls,.csv" hidden><input type="file" id="bkI" accept=".json" hidden>
 <input type="file" id="qPh" accept="image/*" hidden><div id="qHid" style="display:none"></div>
 <script>
+/* RESET GERAL (única vez por aparelho) — 2026-11-24
+   Apaga usuários, sessão, movimentações, auditoria, pedidos, contagem, fila, inventário, leituras e avisos;
+   deixa TODOS os produtos com 5 un. Mantém: catálogo, estoques mínimos, configuração de sincronização,
+   alertas, zoom e identificação do aparelho. Só roda depois de digitar RESETAR; depois grava um carimbo e não repete. */
+(function(){
+ const RESET_ID="reset-2026-11-24";
+ try{
+  if(localStorage.getItem("mdo_reset_id")===RESET_ID)return;
+  const r=window.prompt("RESET GERAL DO MDO ESTOQUE\n\nIsto vai APAGAR neste aparelho: usuários e senhas (inclusive o administrador), movimentações, auditoria, pedidos, contagem e histórico de inventário, e deixar todos os produtos com 5 un.\n\nFaça o backup antes, se precisar. Para confirmar, digite RESETAR:");
+  if(String(r||"").trim().toUpperCase()!=="RESETAR")return;
+  ["mdo_u","mdo_sess","mdo_s","mdo_m","mdo_aud","mdo_req","mdo_cnt","mdo_fila","mdo_cads","mdo_invh","mdo_inv","undefined","mdo_leit","mdo_av","mdo_abd"].forEach(k=>localStorage.removeItem(k));
+  const raw=localStorage.getItem("mdo_P");
+  if(raw){
+   try{const a=JSON.parse(raw);if(Array.isArray(a)){a.forEach(p=>{if(Array.isArray(p))p[3]=5});localStorage.setItem("mdo_P",JSON.stringify(a))}}
+   catch(e){localStorage.removeItem("mdo_P")}   /* catálogo ilegível: volta ao catálogo original, todo em 5 un. */
+  }
+  const sy=localStorage.getItem("mdo_sync");
+  if(sy){try{const o=JSON.parse(sy);if(o&&typeof o==="object"){o.desde=0;o.ultimoOk=0;o.ultimoErro="";localStorage.setItem("mdo_sync",JSON.stringify(o))}}catch(e){}}
+  localStorage.setItem("mdo_reset_id",RESET_ID);
+  window.MDO_RESET_FEITO=true;
+ }catch(e){}
+})();
 const P=[["80202500146","RX CLOTE ACETATO 5CL660645515140 - C1 CAPA","PRETO",5],["80202500147","RX CLOTE ACETATO 5CL660645515140 - C2 CAPA","DEMI",5],["80202500148","RX CLOTE ACETATO 5CL660645515140 - C3 CAPA","ROXO",5],["80202502034","RX ARMATTI ACETATO 5AR051335517140 - C1","PRETO",5],["80202502035","RX ARMATTI ACETATO 5AR051335517140 - C2","PRETO",5],["80202502036","RX ARMATTI ACETATO 5AR051335517140 - C3","DEMI",5],["80202502037","RX ARMATTI ACETATO 5AR051335517140 - C4","CINZA",5],["80202502038","RX ARMATTI TR90 5AR051565617142 - C1","PRETO",5],["80202502039","RX ARMATTI TR90 5AR051565617142 - C2","AZUL",5],["80202502040","RX ARMATTI TR90 5AR051565617142 - C3","CINZA",5],["80202502041","RX ARMATTI TR90 5AR051485617140 - C1","PRETO",5],["80202502042","RX ARMATTI TR90 5AR051485617140 - C2","AZUL",5],["80202502043","RX ARMATTI TR90 5AR051485617140 - C3","CINZA",5],["80202502044","RX ARMATTI TR90 5AR051475616140 - C1","PRETO",5],["80202502045","RX ARMATTI TR90 5AR051475616140 - C2","AZUL",5],["80202502046","RX ARMATTI TR90 5AR051475616140 - C3","CINZA",5],["80202502047","RX ARMATTI TR90 5AR051575614142 - C1","PRETO",5],["80202502048","RX ARMATTI TR90 5AR051575614142 - C2","AZUL",5],["80202502049","RX ARMATTI TR90 5AR051575614142 - C3","CINZA",5],["80202502050","RX ARMATTI TR90 5AR051445415140 - C1","PRETO",5],["80202502051","RX ARMATTI TR90 5AR051445415140 - C2","CINZA",5],["80202502052","RX ARMATTI TR90 5AR051445415140 - C3","AZUL",5],["80202502053","RX ARMATTI TR90 5AR051535616140 - C1","PRETO",5],["80202502054","RX ARMATTI TR90 5AR051535616140 - C2","AZUL",5],["80202502055","RX ARMATTI TR90 5AR051535616140 - C3","CINZA",5],["80202502056","RX ARMATTI TR90 5AR051625418135 - C1","PRETO",5],["80202502057","RX ARMATTI TR90 5AR051625418135 - C2","AZUL",5],["80202502058","RX ARMATTI TR90 5AR051625418135 - C3","CINZA",5],["80202502059","RX ARMATTI TR90 5AR051505418145 - C1","PRETO",5],["80202502060","RX ARMATTI TR90 5AR051505418145 - C2","AZUL",5],["80202502061","RX ARMATTI TR90 5AR051505418145 - C3","CINZA",5],["80202502062","RX ARMATTI TR90 5AR051455614140 - C1","PRETO",5],["80202502063","RX ARMATTI TR90 5AR051455614140 - C2","AZUL",5],["80202502064","RX ARMATTI TR90 5AR051455614140 - C3","CINZA",5],["80202502065","RX ARMATTI TR90 5AR051595617140 - C1","PRETO",5],["80202502066","RX ARMATTI TR90 5AR051595617140 - C2","CINZA",5],["80202502067","RX ARMATTI TR90 5AR051595617140 - C3","AZUL",5],["80202502068","RX ARMATTI TR90 5AR051545516140 - C1","PRETO",5],["80202502069","RX ARMATTI TR90 5AR051545516140 - C2","AZUL",5],["80202502070","RX ARMATTI TR90 5AR051545516140 - C3","CINZA",5],["80202502071","RX ARMATTI TR90 5AR051465616140 - C1","PRETO",5],["80202502072","RX ARMATTI TR90 5AR051465616140 - C2","AZUL",5],["80202502073","RX ARMATTI TR90 5AR051465616140 - C3","CINZA",5],["80202502074","RX ARMATTI TR90 5AR051495517145 - C1","PRETO",5],["80202502075","RX ARMATTI TR90 5AR051495517145 - C2","AZUL",5],["80202502076","RX ARMATTI TR90 5AR051495517145 - C3","CINZA",5],["80202502077","RX ARMATTI TR90 5AR051615516140 - C1","PRETO",5],["80202502078","RX ARMATTI TR90 5AR051615516140 - C2","AZUL",5],["80202502079","RX ARMATTI TR90 5AR051615516140 - C3","CINZA",5],["80202502080","RX ARMATTI TR90 5AR051635416140 - C1","PRETO",5],["80202502081","RX ARMATTI TR90 5AR051635416140 - C2","CINZA",5],["80202502082","RX ARMATTI TR90 5AR051635416140 - C3","AZUL",5],["80202503158","RX CLOTE ACETATO 5CL661165617145 - C1","PRETO",5],["80202503159","RX CLOTE ACETATO 5CL661165617145 - C2","AZUL",5],["80202503160","RX CLOTE ACETATO 5CL661165617145 - C4","MARROM",5],["80202503161","RX CLOTE TR90 5CL661205416140 - C1","PRETO",5],["80202503162","RX CLOTE TR90 5CL661205416140 - C2","MARROM",5],["80202503163","RX CLOTE TR90 5CL661205416140 - C3","VERMELHO",5],["80202503164","RX CLOTE TR90 5CL660935417140 - C1","PRETO",5],["80202503165","RX CLOTE TR90 5CL660935417140 - C2","BORDÔ",5],["80202503166","RX CLOTE TR90 5CL660935417140 - C3","VERMELHO",5],["80202503167","RX CLOTE TR90 5CL660935417140 - C4","CINZA",5],["80202503168","RX CLOTE ACETATO 5CL661175517140 - C1","PRETO",5],["80202503169","RX CLOTE ACETATO 5CL661175517140 - C2","DEMI",5],["80202503170","RX CLOTE ACETATO 5CL661175517140 - C3","AZUL",5],["80202503174","RX CLOTE ACETATO 5CL660735416145 - C1","PRETO",5],["80202503175","RX CLOTE ACETATO 5CL660735416145 - C2","DEMI",5],["80202503176","RX CLOTE ACETATO 5CL660735416145 - C3","VERMELHO",5],["80202503177","RX CLOTE ACETATO 5CL660735416145 - C4","AZUL",5],["80202503178","RX CLOTE ACETATO 5CL661095415140 - C1","PRETO",5],["80202503179","RX CLOTE ACETATO 5CL661095415140 - C2","TRANSPARENTE",5],["80202503180","RX CLOTE ACETATO 5CL661095415140 - C4","MARROM",5],["80202503185","RX CLOTE ACETATO 5CL661145317140 - C1","PRETO",5],["80202503186","RX CLOTE ACETATO 5CL661145317140 - C3","MARROM",5],["80202503187","RX CLOTE ACETATO 5CL661145317140 - C4","AZUL",5],["80202503188","RX CLOTE TR90 5CL660945316140 - C1","PRETO",5],["80202503189","RX CLOTE TR90 5CL660945316140 - C3","MARROM",5],["80202503190","RX CLOTE TR90 5CL660945316140 - C5","VERMELHO",5],["80202503191","RX CLOTE TR90 5CL660945316140 - C6","CINZA",5],["80202503192","RX CLOTE ACETATO 5CL661045417140 - C1","PRETO",5],["80202503193","RX CLOTE ACETATO 5CL661045417140 - C3","DEMI",5],["80202503194","RX CLOTE ACETATO 5CL661045417140 - C4","ROXO",5],["80202503195","RX CLOTE METAL 5CL660555216135 - C1","PRATA",5],["80202503196","RX CLOTE METAL 5CL660555216135 - C3","CINZA",5],["80202503197","RX CLOTE METAL 5CL660555216135 - C4","NUDE",5],["80202503198","RX CLOTE METAL 5CL660885517140 - C1","DOURADO",5],["80202503199","RX CLOTE METAL 5CL660885517140 - C2","DOURADO",5],["80202503200","RX CLOTE METAL 5CL660885517140 - C4","PRETO",5],["80202503201","RX CLOTE METAL 5CL660565218138 - C1","PRETO",5],["80202503202","RX CLOTE METAL 5CL660565218138 - C2","PRATA",5],["80202503203","RX CLOTE METAL 5CL660565218138 - C3","DOURADO",5],["80202503204","RX CLOTE METAL 5CL660565218138 - C4","DOURADO",5],["80202503205","RX CLOTE METAL 5CL660875516140 - C1","PRETO",5],["80202503206","RX CLOTE METAL 5CL660875516140 - C2","DOURADO",5],["80202503207","RX CLOTE METAL 5CL660875516140 - C4","DOURADO",5],["80202503208","RX ARMATTI METAL 5AR660545416140 - C1","PRETO",5],["80202503209","RX ARMATTI METAL 5AR660545416140 - C2","PRATA",5],["80202503210","RX ARMATTI METAL 5AR660545416140 - C4","PRETO",5],["80202503227","RX ARMATTI ACETATO 5AR660765518140 - C1","PRETO",5],["80202503228","RX ARMATTI ACETATO 5AR660765518140 - C2","AZUL",5],["80202503229","RX ARMATTI ACETATO 5AR660765518140 - C4","DEMI",5],["80202503234","RX ARMATTI TR90 5AR660735919150 - C2","PRETO",5],["80202503235","RX ARMATTI TR90 5AR660735919150 - C4","CINZA",5],["80202503236","RX ARMATTI TR90 5AR660735919150 - C5","AZUL",5],["80202503241","RX ARMATTI TR90 5AR660725517142 - C1","PRETO",5],["80202503242","RX ARMATTI TR90 5AR660725517142 - C2","AZUL",5],["80202503243","RX ARMATTI TR90 5AR660725517142 - C3","CINZA",5],["80202504618","RX CLOTE TR90 0CL032745416140 - C1","PRETO",5],["80202504619","RX CLOTE TR90 0CL032745416140 - C2","ROSA",5],["80202504620","RX CLOTE TR90 0CL032745416140 - C3","ROSA",5],["80202504621","RX CLOTE TR90 0CL032745416140 - C4","DOURADO",5],["80202504626","RX CLOTE TR90 0CL032725115138 - C1","PRETO",5],["80202504627","RX CLOTE TR90 0CL032725115138 - C2","MARROM",5],["80202504628","RX CLOTE TR90 0CL032725115138 - C3","ROSA",5],["80202504629","RX CLOTE TR90 0CL032725115138 - C4","DEMI",5],["80202505224","RX CLOTE METAL 0CL032965318140 - C1","PRATA",5],["80202505225","RX CLOTE METAL 0CL032965318140 - C2","PRATA",5],["80202505226","RX CLOTE METAL 0CL032965318140 - C3","PRATA",5],["80202505227","RX CLOTE METAL 0CL032965318140 - C4","ROXO",5],["80202505228","RX CLOTE BALGRIFF 0CL033315717140 - C1","PRATA",5],["80202505229","RX CLOTE BALGRIFF 0CL033315717140 - C2","DOURADO",5],["80202505230","RX CLOTE BALGRIFF 0CL033315717140 - C3","PRATA",5],["80202505231","RX CLOTE BALGRIFF 0CL033315717140 - C4","LILÁS",5],["80202505261","RX CLOTE METAL 0CL032985318140 - C1","PRATA",5],["80202505262","RX CLOTE METAL 0CL032985318140 - C2","ROSÉ",5],["80202505263","RX CLOTE METAL 0CL032985318140 - C3","PRATA",5],["80202505264","RX CLOTE METAL 0CL032985318140 - C4","NUDE",5],["80202505265","RX CLOTE METAL 0CL033035417140 - C1","DOURADO",5],["80202505266","RX CLOTE METAL 0CL033035417140 - C2","PRATA",5],["80202505267","RX CLOTE METAL 0CL033035417140 - C3","PRATA",5],["80202505268","RX CLOTE METAL 0CL033035417140 - C4","LILÁS",5],["80202507140","RX CLOTE BALGRIFF 0CL033345417140 - C1","PRATA",5],["80202507141","RX CLOTE BALGRIFF 0CL033345417140 - C2","PRATA",5],["80202507143","RX CLOTE BALGRIFF 0CL033345417140 - C4","PRATA",5],["80202507145","RX CLOTE BALGRIFF 0CL033335417140 - C2","ROSA",5],["80202507146","RX CLOTE BALGRIFF 0CL033335417140 - C3","PRATA",5],["80202507147","RX CLOTE BALGRIFF 0CL033335417140 - C4","PRATA",5],["80202507148","RX CLOTE METAL 0CL033055418140 - C1","PRATA",5],["80202507149","RX CLOTE METAL 0CL033055418140 - C2","PRATA",5],["80202507150","RX CLOTE METAL 0CL033055418140 - C3","PRATA",5],["80202507151","RX CLOTE METAL 0CL033055418140 - C4","PRATA",5],["80202507156","RX ARMATTI METAL 0AR031185819145 - C1","PRETO",5],["80202507157","RX ARMATTI METAL 0AR031185819145 - C2","CINZA",5],["80202507158","RX ARMATTI METAL 0AR031185819145 - C3","AZUL",5],["80202507159","RX ARMATTI METAL 0AR031185819145 - C4","MARROM",5],["80202507160","RX ARMATTI METAL 0AR031225617145 - C1","PRETO",5],["80202507162","RX ARMATTI METAL 0AR031225617145 - C2","CINZA",5],["80202507163","RX ARMATTI METAL 0AR031225617145 - C3","MARROM",5],["80202507164","RX ARMATTI METAL 0AR031225617145 - C4","AZUL",5],["80202507165","RX ARMATTI BALGRIFF 0AR031405819145 - C1","PRETO",5],["80202507166","RX ARMATTI BALGRIFF 0AR031405819145 - C2","CINZA",5],["80202507167","RX ARMATTI BALGRIFF 0AR031405819145 - C3","DOURADO",5],["80202507168","RX ARMATTI BALGRIFF 0AR031405819145 - C4","AZUL",5],["80202507308","RX ARMATTI METAL 0AR031265617145 - C1","PRETO",5],["80202507309","RX ARMATTI METAL 0AR031265617145 - C2","PRETO",5],["80202507310","RX ARMATTI METAL 0AR031265617145 - C3","PRATA",5],["80202507312","RX ARMATTI METAL 0AR031195719145 - C1","PRETO",5],["80202507313","RX ARMATTI METAL 0AR031195719145 - C2","PRATA",5],["80202507314","RX ARMATTI METAL 0AR031195719145 - C3","PRATA",5],["80202507315","RX ARMATTI METAL 0AR031195719145 - C4","CINZA",5]];
 function csv(name,rows){
  const s="\ufeff"+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(";")).join("\r\n");
@@ -438,6 +460,14 @@ function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
   card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
   draw();return}
  let b=bal()[i];
+ /* ETAPA 2 (Bipar) — a bipada é processada direto, sem janela de confirmação.
+    O bloco abaixo continua no código, mas só roda se "mdo_cf" for ligado de propósito (padrão: desligado). */
+ const confirmarBip=ls("mdo_cf",false);
+ if(confirmarBip){
+  const ok=confirm("Confirmar "+(mode==="out"?"BAIXA":mode==="in"?"ENTRADA":"AJUSTE")+"?\n\n"+
+   "Produto: "+p[1]+"\nCódigo: "+c+"\nModelo: "+p[1]+"\nCor: "+(p[2]||"—")+"\nQuantidade: "+qty+"\nSaldo atual: "+b);
+  if(!ok){beep(false);return}
+ }
  if(mode==="out"&&b<qty){
   if(!isA()){REQ.push({id:uid(),c,q:qty,u:cur.l,o:cur.n,ts:Date.now()});sR();beep(false);audit("SOLICITAÇÃO",c,qty);
    card("err","<h3>⛔ Saldo insuficiente ("+b+")</h3><b>"+esc(p[1])+"</b><div class='mu'>Baixa bloqueada. Solicitação enviada ao administrador para aprovação.</div>");draw();return}
@@ -1949,7 +1979,6 @@ const dedupe=t=>{
   const fimT=Date.now();procLock=false;lastT=fimT;ultimoVisto=fimT;   /* conta o desbloqueio a partir do FIM do tratamento */
   OPS_T[c]=fimT;Object.keys(OPS_T).forEach(k=>{if(fimT-OPS_T[k]>10000)delete OPS_T[k]});
   camRetomar();
-  camGarantir().catch(()=>{});                        /* ETAPA 1 (melhorias): confere, sem bloquear, se o vídeo segue rodando */
  }
  return true};
 /* ETAPA 1.5 — Zoom padrão ao abrir a câmera (decisão do usuário: 2,0x; antes 3,4x).
@@ -2051,47 +2080,6 @@ async function camInterrompida(){
  const msg=$("camMsg");
  if(msg)msg.textContent="A câmera foi interrompida (outro app usou a câmera ou o aparelho suspendeu o navegador). Toque em 'Ligar câmera' para continuar."}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&sc){telaLigada(true);camRetomar()}});
-/* ===== ETAPA 1 (melhorias) — câmera do Bipar sem congelar depois da leitura =====
-   Depois de um diálogo (confirm/alerta) ou da volta do app, o vídeo pode ficar parado mesmo "ligado".
-   camGarantir() confere se os quadros avançam e recupera em níveis, sem reabrir a câmera à toa:
-   (1) play()  →  (2) reconectar o MESMO stream ao <video>  →  (3) reabrir a câmera sozinho, no máximo 1x a cada 15 s.
-   Não mexe em zoom, lanterna, travas anti-duplicidade nem no estoque. */
-const CAMG={busy:false,ultReinicio:0};
-function camVideo(){const b=$("cam");return b?b.querySelector("video"):null}
-/* true se o vídeo está realmente avançando (currentTime muda) dentro da janela; true também se a página está oculta (não há o que checar) */
-async function camQuadrosAvancam(v,janelaMs){
- if(document.visibilityState==="hidden")return true;
- if(!v)return false;
- const t0=v.currentTime;
- await new Promise(r=>setTimeout(r,janelaMs||900));
- if(!sc||document.visibilityState==="hidden")return true;
- return !v.paused&&v.readyState>=2&&v.videoWidth>0&&Math.abs(v.currentTime-t0)>0.02}
-async function camGarantir(){
- const btn=$("camBtn");
- if(!sc||CAMG.busy||(btn&&btn.disabled))return;
- CAMG.busy=true;
- try{
-  let v=camVideo();const t=camTrack();
-  if(!v||!t)return;
-  if(t.readyState==="ended"){await camInterrompida();return}
-  if(v.paused){try{await v.play()}catch(e){}}
-  if(await camQuadrosAvancam(v,900))return;                         /* nível 1 bastou (ou nada a fazer) */
-  if(!sc)return;
-  v=camVideo();if(!v)return;
-  try{const st=v.srcObject;if(st){v.srcObject=null;v.srcObject=st}await v.play()}catch(e){}   /* nível 2: mesmo stream, sem novo getUserMedia */
-  if(await camQuadrosAvancam(v,1200))return;
-  if(!sc)return;
-  const agora=Date.now();                                            /* nível 3: reabre sozinho, com limite para não entrar em laço */
-  if(agora-CAMG.ultReinicio<15000){await camInterrompida();return}
-  CAMG.ultReinicio=agora;
-  const m=$("camMsg");if(m)m.textContent="Retomando a câmera…";
-  await camOff();
-  await new Promise(r=>setTimeout(r,250));
-  if(btn)btn.click();
- }finally{CAMG.busy=false}}
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&sc)camGarantir().catch(()=>{})});
-window.addEventListener("pageshow",()=>{if(sc)camGarantir().catch(()=>{})});
-window.addEventListener("focus",()=>{if(sc)camGarantir().catch(()=>{})});
 /* toque no visor = refocar (só onde o aparelho oferece foco pontual; sem suporte, não faz nada) */
 function focoPorToque(){
  const t=camTrack();if(!t)return;
@@ -2112,8 +2100,7 @@ async function startNative(box,f){
  const z=await aplicarZoom(stream,box);
  let on=true,rodando=false;
  try{const t0=stream.getVideoTracks()[0];t0&&t0.addEventListener&&t0.addEventListener("ended",()=>{if(on)camInterrompida()})}catch(e){}
- (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;{let liberado=false;const libera=()=>{if(!liberado){liberado=true;rodando=false}};   /* ETAPA 1 (melhorias): tempo limite — se o detect() nunca terminar, a leitura não fica presa */
-   det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(libera);setTimeout(libera,1500)}
+ (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(()=>{rodando=false});
    if(Date.now()-(ULTQUADRO?ULTQUADRO.quando:0)>400)guardarQuadro(v)}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
  const mover=async(alvo)=>{
   const t=stream.getVideoTracks()[0],c=t&&t.getCapabilities&&t.getCapabilities();
@@ -2324,7 +2311,8 @@ $("cadPh").onchange=e=>{const f=e.target.files[0];e.target.value="";cadPorFoto(f
 })();
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
 {const s=ls(K.s,null);if(s&&U.some(x=>x.l===s&&x.st!=="desat"&&!x.temp&&x.st!=="bloq"&&x.st!=="pend"))enter(s);else showLogin()}
+if(window.MDO_RESET_FEITO){const m=$("lgCadMsg");if(m)m.textContent="Reset concluído neste aparelho: crie o novo administrador (nome, login e senha)."}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.8.1 · 2026-11</div>
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.9.1 · 2026-11</div>
 </body></html>
