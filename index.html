@@ -1984,9 +1984,9 @@ const dedupe=t=>{
 /* ETAPA 1.5 — Zoom padrão ao abrir a câmera (decisão do usuário: 2,0x; antes 3,4x).
    Ordem: zoom da câmera (quando o aparelho expõe) → ampliação digital da região central.
    O que não for possível fica explicado em #camMsg, sem criar controle novo na tela. */
-const ZOOM=2.0;                 /* zoom com que a câmera abre (só quando não há zoom salvo pelo operador) */
-let ZOOMATUAL=ls("mdo_zoom",null)||ZOOM;   /* último zoom escolhido na barra, fica salvo */
-function zoomAviso(msg){const m=$("camMsg");if(m&&msg)m.dataset.zoom=msg}
+const ZOOM=2.0;                 /* ETAPA 3 (Bipar): zoom padrão — a câmera SEMPRE abre tentando 2x */
+let ZOOMATUAL=ZOOM;   /* zoom em uso; a barra pode mudar durante o uso, mas cada abertura da câmera volta a 2x */
+function zoomAviso(msg){const m=$("camMsg");if(m)m.dataset.zoom=msg||""}
 /* aplica o zoom escolhido na barra à câmera que está rodando agora (sem reabrir) */
 async function zoomAplicar(z){
  ZOOMATUAL=Math.max(1,Math.min(6,Number(z)||1));
@@ -2022,27 +2022,40 @@ function zoomBarra(ligar){
  }
 }
 async function aplicarZoom(stream,box){
- let max=0;
- try{const t=stream.getVideoTracks()[0],c=t.getCapabilities&&t.getCapabilities();
-  if(c&&c.zoom){max=Number(c.zoom.max)||0;
-   const alvo=Math.min(ZOOMATUAL,max);
-   if(alvo>1)await t.applyConstraints({advanced:[{zoom:alvo}]});}}catch(e){}
+ /* ETAPA 3 — ordem de preferência: (1) zoom de câmera do aparelho, dentro do que ele informa suportar;
+    (2) se ele não alcança o alvo (ou não expõe zoom, como o Safari do iPhone), a ampliação digital
+    completa só o que falta. A ampliação digital é uma escala uniforme da imagem na tela (sem distorção);
+    o leitor continua recebendo o quadro inteiro da câmera, então a leitura não perde qualidade. */
+ const alvoPedido=ZOOMATUAL;
+ let max=0,min=1,nativoAplicado=1,t=null;
+ try{
+  t=stream.getVideoTracks()[0];
+  const c=t&&t.getCapabilities&&t.getCapabilities();
+  if(c&&c.zoom){
+   max=Number(c.zoom.max)||0;min=Number(c.zoom.min)||1;
+   const alvo=Math.max(min,Math.min(alvoPedido,max));
+   if(alvo>1){
+    await t.applyConstraints({advanced:[{zoom:alvo}]});
+    nativoAplicado=alvo;
+    /* confere o que o aparelho realmente aplicou: se ele ignorou o pedido, o digital assume */
+    const st=t.getSettings&&t.getSettings();
+    if(st&&typeof st.zoom==="number"&&isFinite(st.zoom)&&st.zoom>0&&Math.abs(st.zoom-alvo)>0.05)nativoAplicado=Math.max(1,Math.min(alvo,st.zoom));
+   }
+  }
+ }catch(e){nativoAplicado=1}
+ if(t)focusCont(t);   /* alguns aparelhos perdem o foco contínuo ao mudar o zoom: pede de novo */
  const v=box&&box.querySelector("video");
- const zNativo=max>1;
- const digital=!zNativo||max<ZOOMATUAL;   // o digital completa o que a lente não alcança
- /* quanto o zoom de câmera cobriu; o digital (transform) completa o resto */
- const nativoAplicado=zNativo?Math.min(ZOOMATUAL,max):1;
- const digitalFalta=Math.max(1,ZOOMATUAL/nativoAplicado);
+ const zNativo=nativoAplicado>1.01;
+ const digitalFalta=Math.max(1,alvoPedido/nativoAplicado);
+ const digital=digitalFalta>1.01;
  if(v){
   v.style.transformOrigin="50% 50%";
-  /* ETAPA 6.1: com zoom de câmera menor que o zoom escolhido, o digital completa (antes a imagem ficava sem) */
-  /* (C) com zoom nativo do aparelho, NADA de ampliacao digital: o iPhone expoe ate 10x
-     e esticar pixel so piora a leitura do codigo */
-  v.style.transform=(zNativo&&max>=ZOOMATUAL)?"":(zNativo?"":("scale("+digitalFalta+")"));
+  v.style.transform=digital?("scale("+digitalFalta+")"):"";
  }
- if(!zNativo)zoomAviso("Zoom por ampliação digital (este aparelho não expõe zoom de câmera).");
- else if(max<ZOOMATUAL)zoomAviso("Zoom de câmera até "+max.toFixed(1)+"x; o restante até "+ZOOMATUAL.toFixed(1)+"x é ampliação digital.");
- else zoomAviso("");
+ const fx=n=>n.toFixed(1).replace(".",",")+"x";
+ if(!digital)zoomAviso("");
+ else if(zNativo)zoomAviso("Zoom de câmera até "+fx(nativoAplicado)+"; o restante até "+fx(alvoPedido)+" é ampliação digital (só na imagem).");
+ else zoomAviso("Zoom "+fx(alvoPedido)+" por ampliação digital (este aparelho não expõe zoom de câmera).");
  return{nativo:zNativo,max,digital,digitalFalta,nativoAplicado}
 }
 function addLaser(box){if(box.querySelector("#lz"))return;const z=document.createElement("div");z.id="lz";z.innerHTML='<div class="ln"></div>';box.appendChild(z)}
@@ -2106,6 +2119,7 @@ async function startNative(box,f){
   const t=stream.getVideoTracks()[0],c=t&&t.getCapabilities&&t.getCapabilities();
   let nat=1;
   try{if(c&&c.zoom){nat=Math.min(alvo,Number(c.zoom.max)||0);if(nat>1)await t.applyConstraints({advanced:[{zoom:nat}]})}}catch(e){nat=1}
+  if(t)focusCont(t);
   const falta=Math.max(1,alvo/(nat>1?nat:1));
   v.style.transformOrigin="50% 50%";v.style.transform=falta>1.01?("scale("+falta+")"):"";
   return{nativo:nat,falta};
@@ -2130,8 +2144,8 @@ async function startLib(box){
    // html5-qrcode pode usar <canvas>; nesse caso o zoom é aplicado via constraints da track ativa
    const cap=q.getRunningTrackCameraCapabilities&&q.getRunningTrackCameraCapabilities();
    const max=(cap&&cap.zoomFeature&&cap.zoomFeature.isSupported&&cap.zoomFeature.isSupported())?Number(cap.zoomFeature.max&&cap.zoomFeature.max())||0:0;
-   if(max>1){await q.applyVideoConstraints({advanced:[{zoom:Math.min(ZOOMATUAL,max)}]});z={nativo:true,max,digital:max<ZOOMATUAL};zoomAviso(max<ZOOMATUAL?"Zoom de câmera até "+max.toFixed(1)+"x; o restante até "+ZOOMATUAL.toFixed(1).replace(".",",")+"x é ampliação digital.":"")}
-   else if(v){v.style.transformOrigin="50% 50%";v.style.transform="scale("+ZOOMATUAL+")";z={nativo:false,max:0,digital:true};zoomAviso("Zoom "+ZOOMATUAL.toFixed(1).replace(".",",")+"x por ampliação digital (este aparelho não expõe zoom de câmera).")}
+   if(max>1){const nat=Math.min(ZOOMATUAL,max),falta=Math.max(1,ZOOMATUAL/nat);await q.applyVideoConstraints({advanced:[{zoom:nat}]});if(falta>1.01){v.style.transformOrigin="50% 50%";v.style.transform="scale("+falta+")"}z={nativo:true,max,digital:falta>1.01,digitalFalta:falta,nativoAplicado:nat};zoomAviso(max<ZOOMATUAL?"Zoom de câmera até "+max.toFixed(1)+"x; o restante até "+ZOOMATUAL.toFixed(1).replace(".",",")+"x é ampliação digital.":"")}
+   else if(v){v.style.transformOrigin="50% 50%";v.style.transform="scale("+ZOOMATUAL+")";z={nativo:false,max:0,digital:true,digitalFalta:ZOOMATUAL,nativoAplicado:1};zoomAviso("Zoom "+ZOOMATUAL.toFixed(1).replace(".",",")+"x por ampliação digital (este aparelho não expõe zoom de câmera).")}
   }
  }catch(e){}
  q.mdoZoom=z;
@@ -2150,6 +2164,7 @@ async function startLib(box){
 $("camBtn").onclick=async()=>{initAudio();LEIT.origem="câmera (Bipar)";const box=$("cam"),msg=$("camMsg");last="";lastT=0;ultimoVisto=0;procLock=false;ultimoAvisoRep=0;rearme=false;OPS_T={};
  const t0=(window.performance&&performance.now)?performance.now():Date.now();
  if(sc)return camOff();
+ ZOOMATUAL=ZOOM;   /* ETAPA 3: toda abertura começa em 2x, mesmo que a barra tenha sido movida antes */
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){msg.textContent=window.isSecureContext?"Este navegador não permite usar a câmera aqui. Use a foto ou digite abaixo.":camErr({name:"SecurityError"});return}
  box.style.display="block";msg.textContent="Iniciando câmera…";$("camBtn").disabled=true;
  try{
@@ -2314,5 +2329,5 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>tab(b.dataset.t
 if(window.MDO_RESET_FEITO){const m=$("lgCadMsg");if(m)m.textContent="Reset concluído neste aparelho: crie o novo administrador (nome, login e senha)."}
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
-</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.9.1 · 2026-11</div>
+</script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.9.2 · 2026-11</div>
 </body></html>
