@@ -460,6 +460,8 @@ function unk(c){beep(false);
   PP.push([c,d.trim().toUpperCase(),cor.trim().toUpperCase(),q0]);sP("P",PP);reidx();draw();last="";audit("PRODUTO CADASTRADO",c,d.trim());
   card("","<h3>✅ Produto cadastrado</h3><b>"+esc(d)+"</b><div class='mu'>"+esc(c)+"</div>");return}
  card("err","<h3>❌ Código não encontrado</h3><div class='big'>"+esc(c)+"</div><div class='mu'>Esse código não está no cadastro."+(isA()?"":" Peça ao administrador para cadastrar.")+"</div>")}
+/* ETAPA 8 — depois de uma leitura processada com sucesso, a quantidade por bipada volta para 1 */
+function qtyReset(){qty=1;const v=$("qv");if(v)v.textContent="1"}
 function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
  if(idx[c]==null)return unk(c);
  const i=idx[c],p=PP[i];
@@ -467,7 +469,7 @@ function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
   CNT[c]={q:(CNT[c]?CNT[c].q||0:0)+qty,l:cur.l,n:cur.n,ts:Date.now()};sC();hit(c);beep(true);
   if(typeof invContar==="function")invContar(c,qty);
   card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
-  draw();return}
+  qtyReset();draw();return}
  let b=bal()[i];
  /* ETAPA 2 (Bipar) — a bipada é processada direto, sem janela de confirmação.
     O bloco abaixo continua no código, mas só roda se "mdo_cf" for ligado de propósito (padrão: desligado). */
@@ -489,7 +491,7 @@ function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
  if(typeof alertas==="function")alertas();
  hit(c);beep(true);
  card(mode==="out"?"okout":"","<h3>"+(mode==="out"?"⬇ Baixa registrada":"⬆ Entrada registrada")+" · "+qty+" un.</h3><div><b>"+esc(p[1])+"</b></div><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Saldo atual</div><div class='big"+(b<0?" neg":"")+"'>"+b+"</div>"+(b<0?"<div class='neg'><b>⚠ Saldo negativo</b></div>":b===0?"<div><b>⚠ Estoque zerado</b></div>":mn&&b<=mn?"<div class='neg'><b>⚠ Abaixo do mínimo ("+mn+")</b></div>":"")+avGrav);
- draw()}
+ qtyReset();draw()}
 
 /* ===== ETAPA 3 — Movimentações confiáveis e sincronização ===== */
 /* Toda movimentação entra na fila e só sai dela com a confirmação real do servidor.
