@@ -1619,7 +1619,6 @@ $("hX").onclick=()=>histCSV();
 function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]);
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
  let h='';
- h+='<div class="card"><h3>⚠ Abaixo do mínimo ('+low.length+')</h3>'+low.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+'<div class="mu">Toque num produto da aba Estoque para definir o mínimo.</div>'+(low.length?'<button type="button" class="btn ghost" data-a="wa">📲 Enviar alerta pelo WhatsApp</button>':'')+'</div>';
  if(!contasAtivas()){const rowU=(u,i)=>{const eu=u.l===cur.l,st=u.st==="pend"?" · ⏳ aguardando aprovação":u.st==="bloq"?" · 🔴 bloqueado":u.st==="desat"?" · ⚪ desativado":u.temp?" · troca de senha pendente":"";
   const B=(a,t,c)=>'<button type="button" class="pill'+(c||"")+'" data-a="'+a+'" data-i="'+i+'">'+t+'</button> ';
   return'<div class="item"><span><b>'+esc(u.n)+'</b><span class="mu">'+esc(u.l)+' · '+(u.r==="admin"?"Administrador":"Operador")+st+'</span></span><span>'+
