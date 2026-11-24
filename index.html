@@ -438,13 +438,6 @@ function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
   card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
   draw();return}
  let b=bal()[i];
- /* ETAPA 3.2 — confirmação clara antes de efetivar (o admin pode desligar em Admin › Dados) */
- const confirmarBip=ls("mdo_cf",true);
- if(confirmarBip){
-  const ok=confirm("Confirmar "+(mode==="out"?"BAIXA":mode==="in"?"ENTRADA":"AJUSTE")+"?\n\n"+
-   "Produto: "+p[1]+"\nCódigo: "+c+"\nModelo: "+p[1]+"\nCor: "+(p[2]||"—")+"\nQuantidade: "+qty+"\nSaldo atual: "+b);
-  if(!ok){beep(false);return}
- }
  if(mode==="out"&&b<qty){
   if(!isA()){REQ.push({id:uid(),c,q:qty,u:cur.l,o:cur.n,ts:Date.now()});sR();beep(false);audit("SOLICITAÇÃO",c,qty);
    card("err","<h3>⛔ Saldo insuficiente ("+b+")</h3><b>"+esc(p[1])+"</b><div class='mu'>Baixa bloqueada. Solicitação enviada ao administrador para aprovação.</div>");draw();return}
