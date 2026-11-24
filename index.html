@@ -419,7 +419,7 @@ async function cadOperador(){
  audit("AUTOCADASTRO",l,"pendente de aprovação");
  avisar("Novo cadastro aguardando aprovação: "+n+" ("+l+")",{alvo:l});
  modoCadastro(false);$("lgN").value="";
- $("lgE").textContent="Cadastro enviado. Aguarde a aprovação do administrador para entrar.";
+ $("lgE").textContent="Cadastro salvo apenas neste aparelho (sincronização desligada). O administrador só verá este pedido neste mesmo aparelho; em outro aparelho ele não aparece.";
 }
 $("lgP").onkeydown=e=>{if(e.key==="Enter")$("lgB").onclick()};
 $("lgS").onclick=()=>{const i=$("lgP");i.type=i.type==="password"?"text":"password";$("lgS").textContent=i.type==="password"?"👁":"🙈"};
