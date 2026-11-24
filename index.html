@@ -91,6 +91,8 @@ body.camDockOn #cam video,body.camLarga #qCamBox video{object-fit:cover!importan
 .pill{border-radius:999px;padding:3px 10px;font-weight:700;font-size:13px;background:var(--bl);height:fit-content;white-space:nowrap}
 .pill.z{background:var(--y)}.pill.n{background:var(--rl);color:var(--r)}.tag{font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;color:#fff}.tag.o{background:var(--r)}.tag.i{background:var(--b)}
 .item{width:100%;background:none;border:0;border-bottom:1px solid var(--bd);color:inherit;font:inherit;text-align:left;cursor:pointer;align-items:center;border-radius:0}
+#adm .pill{white-space:normal;max-width:58%;text-align:right;overflow-wrap:anywhere}
+#adm .item>span{min-width:0;overflow-wrap:anywhere}
 .item:focus-visible,nav button:focus-visible,.btn:focus-visible,.pill:focus-visible,.seg button:focus-visible{outline:3px solid var(--b2);outline-offset:2px}
 .item>span{display:flex;flex-direction:column;gap:2px;min-width:0}
 #toast{position:fixed;left:12px;right:12px;bottom:84px;background:var(--b);color:#fff;padding:12px 14px;border-radius:12px;font-weight:700;font-size:14px;box-shadow:0 6px 20px rgba(8,24,72,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s;z-index:120;max-width:616px;margin:0 auto}
@@ -157,7 +159,12 @@ nav{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}.seg{grid-template-colu
 <div class="row" style="gap:6px;flex-wrap:wrap">
 <input class="in" id="hQ" style="margin:0;flex:1 1 140px" placeholder="🔎 Produto, código, cor ou operador">
 <select class="in" id="hT" style="margin:0;flex:1 1 110px"><option value="">Todos os tipos</option><option value="in">Entrada</option><option value="out">Saída</option><option value="adj">Ajuste</option><option value="est">Estorno</option></select>
-<select class="in" id="hP" style="margin:0;flex:1 1 110px"><option value="0">Todo o período</option><option value="1">Hoje</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select>
+<select class="in" id="hP" style="margin:0;flex:1 1 110px"><option value="0">Todo o período</option><option value="1">Hoje</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option><option value="m">Mês atual</option><option value="p">Personalizado</option></select>
+<input type="date" class="in" id="hDe" style="margin:0;flex:1 1 120px;display:none" aria-label="De">
+<input type="date" class="in" id="hAte" style="margin:0;flex:1 1 120px;display:none" aria-label="Até">
+<select class="in" id="hO" style="margin:0;flex:1 1 110px" aria-label="Operador"><option value="">Todos os operadores</option></select>
+<select class="in" id="hM" style="margin:0;flex:1 1 110px" aria-label="Modelo"><option value="">Todos os modelos</option></select>
+<select class="in" id="hC" style="margin:0;flex:1 1 110px" aria-label="Cor"><option value="">Todas as cores</option></select>
 <button type="button" class="btn ghost" id="hL" style="width:auto">Limpar</button>
 </div>
 <div class="mu" id="hN" style="margin:8px 0"></div>
@@ -563,19 +570,58 @@ function drawBusca(){
 }
 /* ===== ETAPA 5 — Painel, histórico, relatórios, inventário, alertas e Power BI ===== */
 /* Filtro do histórico (7.3). Vale para a aba Log e para a exportação. */
-const HF={q:"",t:"",dias:0};
+const HF={q:"",t:"",dias:0,per:"",de:"",ate:"",op:"",mod:"",cor:""};
+const HPAG={lim:50,sig:""};   /* quantas linhas do Log aparecem; volta a 50 quando o filtro muda */
 function dentroPeriodo(ts,dias){
  if(!dias)return true;
  const d=new Date(),ini=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
  if(dias===1)return ts>=ini;
  return ts>=ini-(dias-1)*86400000;
 }
+/* período do histórico: dias corridos, mês atual (per "m") ou intervalo escolhido (per "p"), sempre no horário local */
+function histPeriodoOk(ts){
+ if(HF.per==="m"){const d=new Date();return ts>=new Date(d.getFullYear(),d.getMonth(),1).getTime()}
+ if(HF.per==="p"){
+  const ini=HF.de?new Date(HF.de+"T00:00:00").getTime():-Infinity,fim=HF.ate?new Date(HF.ate+"T23:59:59.999").getTime():Infinity;
+  return ts>=ini&&ts<=fim;
+ }
+ return dentroPeriodo(ts,Number(HF.dias)||0);
+}
+/* preenche operador/modelo/cor com o que existe de verdade e devolve a tela ao estado dos filtros */
+function histOpcoes(){
+ const ho=$("hO"),hm=$("hM"),hc=$("hC");if(!ho||!hm||!hc)return;
+ const adm=isA(),src=M.filter(vivo).filter(m=>adm||m.u===cur.l),ops={};
+ src.forEach(m=>{if(m.u)ops[m.u]=m.o||m.u});
+ const mods=[...new Set(PP.map(p=>modeloBase(p[1])))].sort();
+ const cores=[...new Set(PP.map(p=>String(p[2]==null?"":p[2]).trim()).filter(Boolean))].sort();
+ const sig=(adm?"A":"O")+JSON.stringify([ops,mods.length,cores.length]);
+ if(histOpcoes.sig!==sig){
+  histOpcoes.sig=sig;
+  const mk=(todos,lista)=>'<option value="">'+todos+'</option>'+lista.map(x=>'<option value="'+esc(x[0])+'">'+esc(x[1])+'</option>').join("");
+  ho.innerHTML=mk("Todos os operadores",Object.entries(ops).sort((a,b)=>a[1]<b[1]?-1:1));
+  hm.innerHTML=mk("Todos os modelos",mods.map(v=>[v,v]));
+  hc.innerHTML=mk("Todas as cores",cores.map(v=>[v,v]));
+ }
+ ho.style.display=adm?"":"none";           /* operador comum só enxerga as próprias bipadas */
+ if(!adm&&HF.op)HF.op="";
+ ho.value=HF.op;hm.value=HF.mod;hc.value=HF.cor;
+ $("hT").value=HF.t;$("hP").value=HF.per||String(HF.dias||0);
+ const pers=HF.per==="p";$("hDe").style.display=pers?"":"none";$("hAte").style.display=pers?"":"none";
+ $("hDe").value=HF.de;$("hAte").value=HF.ate;
+}
 function histFiltrado(){
- const q=String(HF.q||"").toLowerCase().trim(),t=HF.t,dias=Number(HF.dias)||0;
+ const q=String(HF.q||"").toLowerCase().trim(),t=HF.t;
  return (isA()?M:M.filter(m=>m.u===cur.l)).filter(vivo).filter(m=>{
   if(t==="est"){if(!m.est)return false}
   else if(t&&m.t!==t)return false;
-  if(!dentroPeriodo(Number(m.ts)||0,dias))return false;
+  if(!histPeriodoOk(Number(m.ts)||0))return false;
+  if(HF.op&&m.u!==HF.op)return false;
+  if(HF.mod||HF.cor){
+   const p=PP[idx[m.c]];
+   if(!p)return false;
+   if(HF.mod&&modeloBase(p[1])!==HF.mod)return false;
+   if(HF.cor&&String(p[2]==null?"":p[2]).trim()!==HF.cor)return false;
+  }
   if(q){
    const p=PP[idx[m.c]];
    const txt=((p?p[0]+" "+p[1]+" "+p[2]:m.c)+" "+(m.o||"")+" "+(m.u||"")).toLowerCase();
@@ -648,7 +694,7 @@ function painelVer(id){
   return;
  }
  const hoje0=(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()})();
- HF.q="";HF.t=id==="entradas"?"in":"out";HF.dias=1;
+ HF.q="";HF.t=id==="entradas"?"in":"out";HF.dias=1;HF.per="";HF.de="";HF.ate="";HF.op="";HF.mod="";HF.cor="";
  const e=$("hQ"),t=$("hT"),p=$("hP");if(e)e.value="";if(t)t.value=HF.t;if(p)p.value="1";
  tab(2);
 }
@@ -942,11 +988,25 @@ function alertas(){
 /* lista dos alertas ainda válidos (os resolvidos continuam no histórico, mas não incomodam) */
 function alertasAbertos(){return ls(avKey,[]).filter(a=>!a.resolvido)}
 /* 7.6 — Relatório estilo Power BI: só administrador, somente leitura, dados reais */
+const PBIP={lim:50,limA:30,sig:""};   /* paginação do Detalhe e do Atenção; volta ao início quando o filtro muda */
 const PBI={periodo:30,de:"",ate:"",diasParados:0,tipo:"",operador:"",modelo:"",cor:"",cruz:null};
 /* Recorte de datas do relatório.
    PBI.periodo: 1 = hoje, 7 = últimos 7 dias, 30 = últimos 30 dias, 0 = mês atual,
    -1 = personalizado (PBI.de, PBI.ate). PBI.diasParados usa o mesmo recorte. */
 const PERIODOS={"1":"Hoje","7":"7 dias","30":"30 dias","0":"M\u00EAs atual","-1":"Personalizado"};
+/* dia no horário LOCAL do aparelho (toISOString usa UTC e jogava movimentos da noite para o dia seguinte) */
+const diaLocal=ts=>{const d=new Date(ts);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+/* texto do recorte para PDF/planilha: usa as datas reais quando o período é personalizado */
+function pbiRecorteRot(){
+ const br=v=>{const p=String(v||"").split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:""};
+ if(PBI.periodo===-1)return "personalizado: "+(br(PBI.de)||"início")+" a "+(br(PBI.ate)||"hoje");
+ if(PBI.periodo===0)return "mês atual";
+ const n=Number(PBI.periodo)||30;return n===1?"hoje":"últimos "+n+" dias";
+}
+/* tipo do relatório: o estorno é gravado como ajuste com o campo est; a regra é a mesma do filtro do Log */
+const pbiProdOk=p=>{const cor=String(p[2]==null?"":p[2]).trim();return (!PBI.modelo||modeloBase(p[1])===PBI.modelo)&&(!PBI.cor||cor===PBI.cor)};
+const pbiTipoOk=(m,t)=>t==="est"?!!m.est:m.t===t;
+const pbiTipoRot=t=>t==="est"?"Estorno":(TN[t]||t);
 function pbiIntervalo(){
  const agora=new Date();
  const meiaNoite=new Date(agora.getFullYear(),agora.getMonth(),agora.getDate()).getTime();
@@ -969,12 +1029,12 @@ function pbiFiltrado(ignorar){
  const base=pbiBase();
  return base.filter(m=>{
   const p=PP[idx[m.c]];
-  if(PBI.tipo&&m.t!==PBI.tipo)return false;
+  if(PBI.tipo&&!pbiTipoOk(m,PBI.tipo))return false;
   if(PBI.operador&&m.u!==PBI.operador)return false;
   if(PBI.modelo&&(!p||modeloBase(p[1])!==PBI.modelo))return false;
   if(PBI.cor&&(!p||p[2]!==PBI.cor))return false;
   if(PBI.cruz&&PBI.cruz!==ignorar){
-   if(PBI.cruz.tipo==="dia"&&new Date(m.ts).toISOString().slice(0,10)!==PBI.cruz.v)return false;
+   if(PBI.cruz.tipo==="dia"&&diaLocal(m.ts)!==PBI.cruz.v)return false;
    if(PBI.cruz.tipo==="produto"&&m.c!==PBI.cruz.v)return false;
    if(PBI.cruz.tipo==="operador"&&m.u!==PBI.cruz.v)return false;
   }
@@ -1013,7 +1073,7 @@ function pbiDados(){
  const movs=pbiFiltrado(),b=bal();
  const dias={},produtos={},operadores={};
  movs.forEach(m=>{
-  const dia=new Date(m.ts).toISOString().slice(0,10);
+  const dia=diaLocal(m.ts);
   const d=dias[dia]||(dias[dia]={dia,entradas:0,saidas:0});
   const p=PP[idx[m.c]],nome=p?p[1]+" "+p[2]:m.c;
   const pr=produtos[m.c]||(produtos[m.c]={codigo:m.c,nome,entradas:0,saidas:0,total:0});
@@ -1030,13 +1090,15 @@ function pbiDados(){
   produtos:Object.values(produtos).sort((a,b2)=>b2.total-a.total),
   operadores:Object.values(operadores).sort((a,b2)=>b2.total-a.total),
   atualizadoEm:ultimo||Date.now(),
-  baixo:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]),
-  zerados:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>v<=0),
+  baixo:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>pbiProdOk(p)&&MIN[p[0]]>0&&v<=MIN[p[0]]),
+  zerados:PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>pbiProdOk(p)&&v<=0),
   parados:(function(){
    /* usa o periodo do proprio relatorio; se estiver desligado, cai no periodo do topo */
    const d=Number(PBI.diasParados)||Number(PBI.periodo)||30;
-   return parados(d>0?d:30);
+   return parados(d>0?d:30).filter(x=>{const p=PP[idx[x.codigo]];return p&&pbiProdOk(p)});
   })(),
+  /* variação líquida de estoque no recorte: entradas − saídas ± ajustes/estornos (mesma conta do saldo) */
+  liquido:movs.reduce((a,m)=>a+(m.t==="out"?-m.q:m.q),0),
   pendentes:REQ.length
  };
 }
@@ -1046,15 +1108,15 @@ function pbiCSVPivo(){
  const d=pbiDados();
  if(!d.movs.length){toast("Nenhuma movimentação no recorte.",true);return}
  const linhas=[["Resumo do recorte"],["Gerado em",new Date().toLocaleString("pt-BR")],
-  ["Recorte",pbiIntervalo().rot],["Tipo",PBI.tipo?TN[PBI.tipo]:"todos"],
-  ["Operador",PBI.operador||"todos"],["Modelo",PBI.modelo||"todos"],["Cor",PBI.cor||"todos"],[]];
+  ["Recorte",pbiRecorteRot()],["Tipo",PBI.tipo?pbiTipoRot(PBI.tipo):"todos"],
+  ["Operador",PBI.operador||"todos"],["Modelo",PBI.modelo||"todos"],["Cor",PBI.cor||"todos"],["Saldo líquido (entradas − saídas ± ajustes)",d.liquido],[]];
  linhas.push(["Por dia","Entradas","Saídas","Saldo"]);
  d.dias.forEach(x=>linhas.push([x.dia,x.entradas,x.saidas,x.entradas-x.saidas]));
  linhas.push([]);
  linhas.push(["Por tipo","Movimentos","Quantidade"]);
  ["in","out","adj","est"].forEach(t=>{
-  const doTipo=d.movs.filter(m=>m.t===t);
-  if(doTipo.length)linhas.push([TN[t]||t,doTipo.length,doTipo.reduce((a,m)=>a+Math.abs(m.q),0)]);
+  const doTipo=d.movs.filter(m=>pbiTipoOk(m,t));
+  if(doTipo.length)linhas.push([t==="est"?"Estorno (lançamento estornado + estorno)":pbiTipoRot(t),doTipo.length,doTipo.reduce((a,m)=>a+Math.abs(m.q),0)]);
  });
  linhas.push([]);
  linhas.push(["Por operador","Entradas","Saídas","Movimentos"]);
@@ -1077,8 +1139,8 @@ function pbiPDF(){
  const d=pbiDados();
  if(!d.movs.length){toast("Nenhuma movimentação no recorte: nada para exportar.",true);return}
  const cab='<div class="printOnly" style="margin-bottom:8px"><b>MDO Estoque — Relatório</b><div class="mu">Atualizado em '+
-  new Date(d.atualizadoEm).toLocaleString("pt-BR")+' · recorte: '+PBI.periodo+' dia(s)'+
-  (PBI.tipo?' · tipo: '+TN[PBI.tipo]:'')+(PBI.operador?' · operador: '+esc(PBI.operador):'')+
+  new Date(d.atualizadoEm).toLocaleString("pt-BR")+' · recorte: '+esc(pbiRecorteRot())+
+  (PBI.tipo?' · tipo: '+pbiTipoRot(PBI.tipo):'')+(PBI.operador?' · operador: '+esc(PBI.operador):'')+
   (PBI.modelo?' · modelo: '+esc(PBI.modelo):'')+(PBI.cor?' · cor: '+esc(PBI.cor):'')+'</div></div>';
  /* marca tudo o que não é o relatório para ficar fora da impressão */
  const corpo=document.body;
@@ -1095,7 +1157,7 @@ function pbiPDF(){
  try{window.print()}
  catch(e){toast("Não foi possível abrir a impressão neste navegador.",true)}
  setTimeout(()=>{
-  alvo.innerHTML=antes;
+  alvo.innerHTML=antes;drawPbi();
   marcas.forEach(([c,v])=>{c.style.display=v||""});
  },600);
 }
@@ -1111,7 +1173,10 @@ function pbiCSV(){
 function drawPbi(){
  const el=$("pbi");if(!el)return;
  if(!isA()){el.innerHTML="";return}
+ const abertoAntes=!!($("pbiFiltros")&&$("pbiFiltros").open);
  const d=pbiDados();
+ const sigP=JSON.stringify([PBI.periodo,PBI.de,PBI.ate,PBI.diasParados,PBI.tipo,PBI.operador,PBI.modelo,PBI.cor,PBI.cruz]);
+ if(PBIP.sig!==sigP){PBIP.sig=sigP;PBIP.lim=50;PBIP.limA=30}
  const opcoes=(lista,atual)=>'<option value="">Todos</option>'+lista.map(v=>'<option value="'+esc(v)+'"'+(v===atual?" selected":"")+'>'+esc(v)+'</option>').join("");
  const modelos=[...new Set(PP.map(p=>modeloBase(p[1])))].sort();
  const cores=[...new Set(PP.map(p=>p[2]).filter(Boolean))].sort();
@@ -1122,12 +1187,12 @@ function drawPbi(){
  const maxOp=Math.max(1,...d.operadores.map(o=>o.total));
  let h='<div class="card"><h3>📈 Relatório (Power BI)</h3>'+
   '<div class="mu">Somente consulta · dados deste aparelho · Atualizado em '+new Date(d.atualizadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>'+
-  '<details id="pbiFiltros"><summary>⚙️ Filtros</summary><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">'+
+  '<details id="pbiFiltros"'+(abertoAntes?' open':'')+'><summary>⚙️ Filtros</summary><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">'+
    '<select class="in" id="pbiP" style="margin:0;flex:1 1 90px">'+
     ["1","7","30","0","-1"].map(function(v){return '<option value="'+v+'"'+(String(PBI.periodo)===v?" selected":"")+'>'+(PERIODOS[v]||v)+'</option>'}).join("")+'</select>'+
    (PBI.periodo===-1?'<input type="date" class="in" id="pbiDe" value="'+esc(PBI.de||"")+'" style="margin:0;flex:1 1 120px" aria-label="De">'+'<input type="date" class="in" id="pbiAte" value="'+esc(PBI.ate||"")+'" style="margin:0;flex:1 1 120px" aria-label="At\u00E9">':'' )+
    '<select class="in" id="pbiT" style="margin:0;flex:1 1 90px">'+(PBI.tipo?"":'<option value="">Todos os tipos</option>')+
-    ['in','out','adj'].map(t=>'<option value="'+t+'"'+(PBI.tipo===t?" selected":"")+'>'+TN[t]+'</option>').join("")+'</select>'+
+    ['in','out','adj','est'].map(t=>'<option value="'+t+'"'+(PBI.tipo===t?" selected":"")+'>'+pbiTipoRot(t)+'</option>').join("")+'</select>'+
    '<select class="in" id="pbiO" style="margin:0;flex:1 1 90px">'+opcoes(operadores,PBI.operador)+'</select>'+
    '<select class="in" id="pbiM" style="margin:0;flex:1 1 90px">'+opcoes(modelos,PBI.modelo)+'</select>'+
    '<select class="in" id="pbiC" style="margin:0;flex:1 1 90px">'+opcoes(cores,PBI.cor)+'</select>'+
@@ -1140,9 +1205,9 @@ function drawPbi(){
   '</div></details>'+(PBI.cruz?'<div class="mu" style="margin-top:6px">Filtro cruzado: '+esc(PBI.cruz.v)+' (toque de novo para tirar)</div>':'')+'</div>';
  h+='<div class="pbiGrade">';
  h+='<div class="card"><div class="row" style="gap:6px;flex-wrap:wrap">'+
-  ['produtos|'+PP.length,'unidades|'+bal().reduce((a,v)=>a+v,0),'entradas|'+d.dias.reduce((a,x)=>a+x.entradas,0),'saídas|'+d.dias.reduce((a,x)=>a+x.saidas,0),'baixo|'+d.baixo.length,'zerados|'+d.zerados.length,'pendentes|'+d.pendentes].map(x=>{
+  ['produtos|'+PP.filter(pbiProdOk).length,'unidades|'+ec.total,'entradas|'+d.dias.reduce((a,x)=>a+x.entradas,0),'saídas|'+d.dias.reduce((a,x)=>a+x.saidas,0),'saldo líquido|'+(d.liquido>0?'+':'')+d.liquido,'baixo|'+d.baixo.length,'zerados|'+d.zerados.length,'pendentes|'+d.pendentes].map(x=>{
    const [rot,val]=x.split("|");return'<div style="flex:1 1 90px;border:1px solid var(--bd);border-radius:10px;padding:8px"><b style="font-size:18px">'+val+'</b><div class="mu" style="font-size:11px">'+rot+'</div></div>'}).join("")+'</div></div>';
- h+='<div class="card"><h3>Entradas e saídas por dia</h3>'+(d.dias.length?d.dias.map(x=>'<div class="item" data-a="pbiDia" data-v="'+x.dia+'"><span class="mu">'+x.dia.slice(5)+'</span><span style="display:flex;gap:4px;align-items:center;flex:1;margin-left:8px">'+
+ h+='<div class="card"><h3>Entradas e saídas por dia</h3><div class="mu" style="font-size:11px"><span style="color:#1f7bff">■</span> entradas (azul) · <span style="color:#dc2626">■</span> saídas (vermelho)</div>'+(d.dias.length?d.dias.map(x=>'<div class="item" data-a="pbiDia" data-v="'+x.dia+'"><span class="mu">'+x.dia.slice(5)+'</span><span style="display:flex;gap:4px;align-items:center;flex:1;margin-left:8px">'+
   '<span style="background:#1f7bff;height:10px;border-radius:3px;width:'+Math.round(x.entradas/maxDia*100)+'%"></span>'+
   '<span style="background:#dc2626;height:10px;border-radius:3px;width:'+Math.round(x.saidas/maxDia*100)+'%"></span></span>'+
   '<span class="mu">'+x.entradas+' / '+x.saidas+'</span></div>').join(""):'<div class="mu">Sem movimentação no período.</div>')+'</div>';
@@ -1154,34 +1219,54 @@ function drawPbi(){
    (ec.negativos?'<div class="mu neg">⚠ '+ec.negativos+' código(s) com saldo negativo ficaram fora da soma (confira o histórico).</div>':'')+
    '<div style="max-height:60vh;overflow-y:auto;margin-top:6px">'+ec.itens.map(o=>'<div class="item"><span><b>'+esc(o.modelo)+'</b><span class="mu">'+esc(o.cor)+' · '+o.codigos+' código(s) · '+o.qtd+' un.'+(o.neg?' · ⚠ '+o.neg+' c/ saldo negativo':'')+'</span></span><span class="pill">'+pct1(o.pct)+'</span></div>').join("")+'</div>'
   :'<div class="mu">'+((PBI.modelo||PBI.cor)?'Nenhum estoque para o modelo/cor filtrado.':'Sem estoque.')+'</div>')+'</div>';
+ const linhasAt=d.zerados.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill z">zerado</span></div>').concat(
+  d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>'),
+  d.parados.map(x=>'<div class="item"><span>'+esc(x.nome)+'</span><span class="pill">parado</span></div>'));
  h+='<div class="card"><h3>⚠ Atenção</h3>'+(PBI.diasParados?'<div class="mu">inclui '+PBI.diasParados+' dia(s) sem movimentação</div>':'')+(d.zerados.length||d.baixo.length||d.parados.length?
-  d.zerados.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill z">zerado</span></div>').join("")+
-  d.baixo.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+
-  d.parados.slice(0,20).map(x=>'<div class="item"><span>'+esc(x.nome)+'</span><span class="pill">parado</span></div>').join("")
+  linhasAt.slice(0,PBIP.limA).join("")+(linhasAt.length>PBIP.limA?'<button type="button" class="btn ghost" data-a="pbiMais" data-v="at">Ver mais ('+(linhasAt.length-PBIP.limA)+' restantes)</button>':"")
   :'<div class="mu">Nenhum produto em alerta.</div>')+'</div>';
  h+='<div class="card"><h3>Detalhe ('+d.movs.length+')</h3>'+
   '<div class="mu">'+(PBI.cruz?'recorte: '+esc(PBI.cruz.v)+' · ':'')+'toque em um item para abrir os detalhes dele</div>'+
-  (d.movs.length?d.movs.slice().reverse().slice(0,50).map(m=>{const p=PP[idx[m.c]];
-   return '<div class="item" data-a="pbiMov" data-v="'+esc(m.c)+'" title="'+esc(fmt(m.ts)+' · '+(TN[m.t]||m.t)+' '+m.q+' · '+(m.o||""))+'"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="pill'+(m.t==="out"?" z":"")+'">'+(m.t==="out"?"-":"+")+Math.abs(m.q)+'</span></div>'
-  }).join(""):'<div class="mu">Sem movimentação no recorte.</div>')+'</div>';
+  (d.movs.length?d.movs.slice().reverse().slice(0,PBIP.lim).map(m=>{const p=PP[idx[m.c]];
+   return '<div class="item" data-a="pbiMov" data-v="'+esc(m.c)+'" title="'+esc(fmt(m.ts)+' · '+(TN[m.t]||m.t)+' '+m.q+' · '+(m.o||""))+'"><span><b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+fmt(m.ts)+' · '+esc(m.o||"")+'</span></span><span class="pill'+(m.t==="out"||m.q<0?" z":"")+'">'+(m.t==="out"||m.q<0?"-":"+")+Math.abs(m.q)+'</span></div>'
+  }).join("")+(d.movs.length>PBIP.lim?'<button type="button" class="btn ghost" data-a="pbiMais" data-v="det">Ver mais ('+(d.movs.length-PBIP.lim)+' restantes)</button>':""):'<div class="mu">Sem movimentação no recorte.</div>')+'</div>';
+ const foco=document.activeElement&&el.contains(document.activeElement)&&document.activeElement.dataset&&document.activeElement.dataset.a?{a:document.activeElement.dataset.a,v:document.activeElement.dataset.v}:null;
  el.innerHTML=h;
  const on=(id,fn)=>{const e=$(id);if(e)fn(e)};
- on("pbiP",e=>e.onchange=()=>{PBI.periodo=Number(e.value)||30;PBI.cruz=null;drawPbi()});
+ on("pbiP",e=>e.onchange=()=>{const v=Number(e.value);PBI.periodo=Number.isFinite(v)?v:30;PBI.cruz=null;drawPbi()});
+ /* período personalizado: as datas passam a valer (antes os campos não tinham tratamento) */
+ const datas=()=>{const a=$("pbiDe"),b=$("pbiAte");if(!a||!b)return;
+  if(a.value&&b.value&&a.value>b.value){toast("A data inicial não pode ser maior que a final.",true);a.value=PBI.de||"";b.value=PBI.ate||"";return}
+  PBI.de=a.value;PBI.ate=b.value;PBI.cruz=null;drawPbi()};
+ on("pbiDe",e=>e.onchange=datas);on("pbiAte",e=>e.onchange=datas);
  on("pbiT",e=>e.onchange=()=>{PBI.tipo=e.value;drawPbi()});
  on("pbiO",e=>e.onchange=()=>{PBI.operador=e.value;drawPbi()});
  on("pbiM",e=>e.onchange=()=>{PBI.modelo=e.value;drawPbi()});
  on("pbiC",e=>e.onchange=()=>{PBI.cor=e.value;drawPbi()});
- on("pbiL",e=>e.onclick=()=>{PBI.periodo=30;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;drawPbi()});
+ on("pbiL",e=>e.onclick=()=>{PBI.periodo=30;PBI.de="";PBI.ate="";PBI.diasParados=0;PBI.tipo="";PBI.operador="";PBI.modelo="";PBI.cor="";PBI.cruz=null;drawPbi()});
  on("pbiS",e=>e.onchange=()=>{PBI.diasParados=Number(e.value)||0;drawPbi()});
  on("pbiA",e=>e.onclick=()=>{drawPbi();toast("Atualizado")});
  on("pbiX",e=>e.onclick=()=>pbiCSVPivo());
  on("pbiF",e=>e.onclick=()=>pbiPDF());
- el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
+ el.querySelectorAll("[data-a]").forEach(b=>b.onclick=ev=>{
+  if(b.dataset.a==="pbiMais"){ev.stopPropagation();if(b.dataset.v==="det")PBIP.lim+=50;else PBIP.limA+=30;drawPbi();return}
   const tipo={pbiDia:"dia",pbiProd:"produto",pbiOp:"operador",pbiMov:"produto"}[b.dataset.a];
   if(!tipo)return;
+  ev.stopPropagation();   /* senão o clique sobe até o painel Admin e redesenha tudo uma segunda vez */
   PBI.cruz=(PBI.cruz&&PBI.cruz.v===b.dataset.v)?null:{tipo,v:b.dataset.v};
   drawPbi();
  });
+ /* acessibilidade: os itens clicáveis dos gráficos viram botões de verdade para teclado e leitor de tela */
+ el.querySelectorAll("[data-a]").forEach(b=>{
+  if(!{pbiDia:1,pbiProd:1,pbiOp:1,pbiMov:1}[b.dataset.a])return;
+  b.setAttribute("role","button");b.setAttribute("tabindex","0");
+  b.setAttribute("aria-pressed",PBI.cruz&&PBI.cruz.v===b.dataset.v?"true":"false");
+  const partes=[...b.children].map(c=>(c.textContent||"").replace(/\s+/g," ").trim()).filter(Boolean);
+  const ult=partes.length?partes[partes.length-1]:"";
+  b.setAttribute("aria-label",(b.dataset.a==="pbiDia"?"Dia "+String(b.dataset.v).split("-").reverse().join("/")+", entradas / saídas: "+ult:partes.join(", "))+" — ative para filtrar o relatório por este item");
+  b.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();b.click()}};
+ });
+ if(foco){const x=[...el.querySelectorAll("[data-a]")].find(y=>y.dataset.a===foco.a&&y.dataset.v===foco.v);if(x)x.focus({preventScroll:true})}
 }
 /* ===== ETAPA 4 — Login, autocadastro e administração com segurança no servidor ===== */
 /* Com servidor configurado, senha, papel, bloqueio e desativação são decididos pela API da Vercel.
@@ -1553,8 +1638,12 @@ function draw(){if(!cur)return;
   h+='<button type="button" class="item" data-c="'+esc(p[0])+'"><span><b>'+esc(p[1])+'</b><span class="mu">'+esc(p[2])+' · '+esc(p[0])+(mn?' · mín. '+mn:'')+'</span></span><span class="pill '+cl+'">'+b[i]+(mn&&b[i]<=mn?' ⚠':'')+'</span></button>'});
  $("tP").textContent=PP.length;$("tN").textContent=z;$("tQ").textContent=t;$("lst").innerHTML=h||'<div class="mu">Nada encontrado.</div>';
  drawPainel();drawBusca();
+ histOpcoes();
  const L=histFiltrado();
- $("log").innerHTML=L.map(m=>{const p=PP[idx[m.c]],sg=m.t==="out"?"−"+m.q:(m.q>0?"+":"")+m.q;return'<div class="item"><span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+'</span> <b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+esc(m.o)+' · '+fmt(m.ts)+(m.ap?' · aprov. '+esc(m.ap):'')+(m.obs?' · '+esc(m.obs):'')+'</span></span><b>'+sg+'</b></div>'}).join("")||'<div class="mu">Sem movimentações.</div>';
+ const sigH=JSON.stringify([HF.q,HF.t,HF.dias,HF.per,HF.de,HF.ate,HF.op,HF.mod,HF.cor]);
+ if(HPAG.sig!==sigH){HPAG.sig=sigH;HPAG.lim=50}
+ $("hN").textContent=L.length+" movimentação(ões)"+(L.length>HPAG.lim?" · mostrando as "+HPAG.lim+" mais recentes":"");
+ $("log").innerHTML=L.slice(0,HPAG.lim).map(m=>{const p=PP[idx[m.c]],sg=m.t==="out"?"−"+m.q:(m.q>0?"+":"")+m.q;return'<div class="item"><span><span class="tag '+(m.t==="out"?"o":m.t==="adj"?"a":"i")+'">'+TN[m.t]+'</span> <b>'+(p?esc(p[1]):esc(m.c))+'</b><span class="mu">'+esc(m.o)+' · '+fmt(m.ts)+(m.ap?' · aprov. '+esc(m.ap):'')+(m.obs?' · '+esc(m.obs):'')+'</span></span><b>'+sg+'</b></div>'}).join("")+(L.length>HPAG.lim?'<button type="button" class="btn ghost" id="hMais">Ver mais ('+(L.length-HPAG.lim)+' restantes)</button>':"")||'<div class="mu">Sem movimentações.</div>';
  if(isA())drawAdm()}
 $("lst").onclick=e=>{const it=e.target.closest(".item");if(!it||!isA())return;const c=it.dataset.c;if(idx[c]==null)return;
  const v=prompt("Estoque mínimo (alerta) para "+PP[idx[c]][1]+". 0 = sem alerta:",MIN[c]||0);if(v===null)return;
@@ -1563,9 +1652,17 @@ $("q").oninput=draw;
 /* ETAPA 5 — filtros do histórico (7.3) */
 $("hQ").oninput=()=>{HF.q=$("hQ").value;draw()};
 $("hT").onchange=()=>{HF.t=$("hT").value;draw()};
-$("hP").onchange=()=>{HF.dias=Number($("hP").value)||0;draw()};
-$("hL").onclick=()=>{HF.q="";HF.t="";HF.dias=0;$("hQ").value="";$("hT").value="";$("hP").value="0";draw()};
+$("hP").onchange=()=>{const v=$("hP").value;if(v==="m"||v==="p"){HF.per=v;HF.dias=0}else{HF.per="";HF.dias=Number(v)||0}draw()};
+const hDatas=()=>{const a=$("hDe").value,b=$("hAte").value;
+ if(a&&b&&a>b){toast("A data inicial não pode ser maior que a final.",true);$("hDe").value=HF.de;$("hAte").value=HF.ate;return}
+ HF.de=a;HF.ate=b;draw()};
+$("hDe").onchange=hDatas;$("hAte").onchange=hDatas;
+$("hO").onchange=()=>{HF.op=$("hO").value;draw()};
+$("hM").onchange=()=>{HF.mod=$("hM").value;draw()};
+$("hC").onchange=()=>{HF.cor=$("hC").value;draw()};
+$("hL").onclick=()=>{HF.q="";HF.t="";HF.dias=0;HF.per="";HF.de="";HF.ate="";HF.op="";HF.mod="";HF.cor="";$("hQ").value="";draw()};
 $("hX").onclick=()=>histCSV();
+$("log").onclick=e=>{if(e.target.closest("#hMais")){HPAG.lim+=50;draw()}};
 function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]);
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
  let h='<div class="card"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
