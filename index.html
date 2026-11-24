@@ -1625,7 +1625,7 @@ $("hT").onchange=()=>{HF.t=$("hT").value;draw()};
 $("hP").onchange=()=>{HF.dias=Number($("hP").value)||0;draw()};
 $("hL").onclick=()=>{HF.q="";HF.t="";HF.dias=0;$("hQ").value="";$("hT").value="";$("hP").value="0";draw()};
 $("hX").onclick=()=>histCSV();
-let AUD_ABERTO=false;
+let AUD_ABERTO=false,AVS_ABERTO=false;
 function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]);
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
  let h='';
@@ -1645,12 +1645,12 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  (cn.length?'<button type="button" class="btn" data-a="ap">Aplicar ajustes ao estoque</button><button type="button" class="btn ghost" data-a="cc">Limpar contagem</button>':'')+
  (orf?'<div class="mu">'+orf+' código(s) contado(s) fora do catálogo atual serão descartados ao aplicar (produto removido ou backup de outro aparelho).</div>':'')+'</div>';
  h+='<div class="card"><details id="audDet"'+(AUD_ABERTO?' open':'')+'><summary class="expSum"><h3>🕵 Auditoria (últimos 30)</h3><span class="expSeta" aria-hidden="true"></span></summary>'+(AUD.slice(-30).reverse().map(a=>'<div class="item"><span><b>'+esc(a.acao)+'</b><span class="mu">'+esc(a.alvo)+(a.extra?' · '+esc(a.extra):'')+'</span></span><span class="mu">'+esc(a.nome)+'<br>'+fmt(a.ts)+'</span></div>').join("")||'<div class="mu">Sem registros.</div>')+'<button type="button" class="btn ghost" data-a="exA">⬇ Exportar auditoria (CSV)</button></details></div>';
- h+='<div class="card"><h3>🔔 Avisos</h3>'+((function(){
+ h+='<div class="card"><details id="avsDet"'+(AVS_ABERTO?' open':'')+'><summary class="expSum"><h3>🔔 Avisos</h3><span class="expSeta" aria-hidden="true"></span></summary>'+((function(){
    const todos=ls(avKey,[]),av=todos.filter(a=>a.lido!==true&&!a.resolvido);
    const resolvidos=todos.filter(a=>a.resolvido&&a.lido!==true).length;
    return av.map((a,i)=>'<div class="item"><span><b>'+esc(a.m)+'</b><span class="mu">'+fmt(a.ts)+'</span></span><button type="button" class="pill" data-a="av" data-i="'+i+'">Marcar lido</button></div>').join("")||'<div class="mu">Nenhum aviso pendente.</div>'
     +(resolvidos?'<div class="mu" style="margin-top:6px">'+resolvidos+' aviso(s) já resolvido(s) pela reposição ou pela sincronização.</div>':'');
- })())+'</div>';
+ })())+'</details></div>';
  /* 7.5 — o administrador escolhe quais alertas quer receber */
  h+='<div class="card"><h3>⚙️ Quais alertas avisar</h3><div class="mu">Desligar um alerta para de criar avisos novos. Os avisos antigos ficam no histórico.</div>'+
   Object.keys(ALERTAS).map(k=>{const on=alertaLigado(k);
@@ -1682,6 +1682,7 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  $("adm").querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>act(b.dataset.a,b.dataset.l));
  const sb=$("syB");if(sb)sb.onclick=()=>sincronizar();
  const ad=$("audDet");if(ad)ad.ontoggle=()=>{AUD_ABERTO=ad.open};
+ const av2=$("avsDet");if(av2)av2.ontoggle=()=>{AVS_ABERTO=av2.open};
  drawRel();drawParados();drawOperadores();drawPbi();
  syncStatus()}
 $("adm").onchange=e=>{if(e.target.id==="abT")sP("ab",e.target.checked)};
