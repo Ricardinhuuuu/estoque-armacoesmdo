@@ -1618,7 +1618,7 @@ $("hL").onclick=()=>{HF.q="";HF.t="";HF.dias=0;$("hQ").value="";$("hT").value=""
 $("hX").onclick=()=>histCSV();
 function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN[p[0]]>0&&v<=MIN[p[0]]);
  const cn=Object.keys(CNT).filter(c=>idx[c]!=null),orf=Object.keys(CNT).length-cn.length;
- let h='<div class="card"><h3>⏳ Aprovações pendentes ('+REQ.length+')</h3>'+(REQ.map((r,i)=>'<div class="item"><span><b>'+esc(nomeP(r.c))+'</b><span class="mu">'+esc(r.o)+' · '+fmt(r.ts)+' · '+r.q+' un.</span></span><span><button type="button" class="pill" data-a="ok" data-i="'+i+'">Aprovar</button> <button type="button" class="pill n" data-a="no" data-i="'+i+'">Recusar</button></span></div>').join("")||'<div class="mu">Nenhuma.</div>')+'</div>';
+ let h='';
  h+='<div class="card"><h3>⚠ Abaixo do mínimo ('+low.length+')</h3>'+low.map(([p,v])=>'<div class="item"><span>'+esc(p[1])+' '+esc(p[2])+'</span><span class="pill n">'+v+' / mín. '+MIN[p[0]]+'</span></div>').join("")+'<div class="mu">Toque num produto da aba Estoque para definir o mínimo.</div>'+(low.length?'<button type="button" class="btn ghost" data-a="wa">📲 Enviar alerta pelo WhatsApp</button>':'')+'</div>';
  if(!contasAtivas()){const rowU=(u,i)=>{const eu=u.l===cur.l,st=u.st==="pend"?" · ⏳ aguardando aprovação":u.st==="bloq"?" · 🔴 bloqueado":u.st==="desat"?" · ⚪ desativado":u.temp?" · troca de senha pendente":"";
   const B=(a,t,c)=>'<button type="button" class="pill'+(c||"")+'" data-a="'+a+'" data-i="'+i+'">'+t+'</button> ';
