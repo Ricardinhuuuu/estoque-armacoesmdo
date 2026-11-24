@@ -438,13 +438,6 @@ function scan(raw,origem){if(!cur)return;const c=normCode(raw);if(!c)return;
   card("","<h3>📋 Contagem · +"+qty+" un.</h3><b>"+esc(p[1])+"</b><div class='mu'>Cor: "+esc(p[2])+" · "+c+"</div><div class='mu'>Total contado</div><div class='big'>"+CNT[c].q+"</div>");
   draw();return}
  let b=bal()[i];
- /* ETAPA 3.2 — confirmação clara antes de efetivar (o admin pode desligar em Admin › Dados) */
- const confirmarBip=ls("mdo_cf",true);
- if(confirmarBip){
-  const ok=confirm("Confirmar "+(mode==="out"?"BAIXA":mode==="in"?"ENTRADA":"AJUSTE")+"?\n\n"+
-   "Produto: "+p[1]+"\nCódigo: "+c+"\nModelo: "+p[1]+"\nCor: "+(p[2]||"—")+"\nQuantidade: "+qty+"\nSaldo atual: "+b);
-  if(!ok){beep(false);return}
- }
  if(mode==="out"&&b<qty){
   if(!isA()){REQ.push({id:uid(),c,q:qty,u:cur.l,o:cur.n,ts:Date.now()});sR();beep(false);audit("SOLICITAÇÃO",c,qty);
    card("err","<h3>⛔ Saldo insuficiente ("+b+")</h3><b>"+esc(p[1])+"</b><div class='mu'>Baixa bloqueada. Solicitação enviada ao administrador para aprovação.</div>");draw();return}
@@ -1956,6 +1949,7 @@ const dedupe=t=>{
   const fimT=Date.now();procLock=false;lastT=fimT;ultimoVisto=fimT;   /* conta o desbloqueio a partir do FIM do tratamento */
   OPS_T[c]=fimT;Object.keys(OPS_T).forEach(k=>{if(fimT-OPS_T[k]>10000)delete OPS_T[k]});
   camRetomar();
+  camGarantir().catch(()=>{});                        /* ETAPA 1 (melhorias): confere, sem bloquear, se o vídeo segue rodando */
  }
  return true};
 /* ETAPA 1.5 — Zoom padrão ao abrir a câmera (decisão do usuário: 2,0x; antes 3,4x).
@@ -2057,6 +2051,47 @@ async function camInterrompida(){
  const msg=$("camMsg");
  if(msg)msg.textContent="A câmera foi interrompida (outro app usou a câmera ou o aparelho suspendeu o navegador). Toque em 'Ligar câmera' para continuar."}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&sc){telaLigada(true);camRetomar()}});
+/* ===== ETAPA 1 (melhorias) — câmera do Bipar sem congelar depois da leitura =====
+   Depois de um diálogo (confirm/alerta) ou da volta do app, o vídeo pode ficar parado mesmo "ligado".
+   camGarantir() confere se os quadros avançam e recupera em níveis, sem reabrir a câmera à toa:
+   (1) play()  →  (2) reconectar o MESMO stream ao <video>  →  (3) reabrir a câmera sozinho, no máximo 1x a cada 15 s.
+   Não mexe em zoom, lanterna, travas anti-duplicidade nem no estoque. */
+const CAMG={busy:false,ultReinicio:0};
+function camVideo(){const b=$("cam");return b?b.querySelector("video"):null}
+/* true se o vídeo está realmente avançando (currentTime muda) dentro da janela; true também se a página está oculta (não há o que checar) */
+async function camQuadrosAvancam(v,janelaMs){
+ if(document.visibilityState==="hidden")return true;
+ if(!v)return false;
+ const t0=v.currentTime;
+ await new Promise(r=>setTimeout(r,janelaMs||900));
+ if(!sc||document.visibilityState==="hidden")return true;
+ return !v.paused&&v.readyState>=2&&v.videoWidth>0&&Math.abs(v.currentTime-t0)>0.02}
+async function camGarantir(){
+ const btn=$("camBtn");
+ if(!sc||CAMG.busy||(btn&&btn.disabled))return;
+ CAMG.busy=true;
+ try{
+  let v=camVideo();const t=camTrack();
+  if(!v||!t)return;
+  if(t.readyState==="ended"){await camInterrompida();return}
+  if(v.paused){try{await v.play()}catch(e){}}
+  if(await camQuadrosAvancam(v,900))return;                         /* nível 1 bastou (ou nada a fazer) */
+  if(!sc)return;
+  v=camVideo();if(!v)return;
+  try{const st=v.srcObject;if(st){v.srcObject=null;v.srcObject=st}await v.play()}catch(e){}   /* nível 2: mesmo stream, sem novo getUserMedia */
+  if(await camQuadrosAvancam(v,1200))return;
+  if(!sc)return;
+  const agora=Date.now();                                            /* nível 3: reabre sozinho, com limite para não entrar em laço */
+  if(agora-CAMG.ultReinicio<15000){await camInterrompida();return}
+  CAMG.ultReinicio=agora;
+  const m=$("camMsg");if(m)m.textContent="Retomando a câmera…";
+  await camOff();
+  await new Promise(r=>setTimeout(r,250));
+  if(btn)btn.click();
+ }finally{CAMG.busy=false}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&sc)camGarantir().catch(()=>{})});
+window.addEventListener("pageshow",()=>{if(sc)camGarantir().catch(()=>{})});
+window.addEventListener("focus",()=>{if(sc)camGarantir().catch(()=>{})});
 /* toque no visor = refocar (só onde o aparelho oferece foco pontual; sem suporte, não faz nada) */
 function focoPorToque(){
  const t=camTrack();if(!t)return;
@@ -2077,7 +2112,8 @@ async function startNative(box,f){
  const z=await aplicarZoom(stream,box);
  let on=true,rodando=false;
  try{const t0=stream.getVideoTracks()[0];t0&&t0.addEventListener&&t0.addEventListener("ended",()=>{if(on)camInterrompida()})}catch(e){}
- (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(()=>{rodando=false});
+ (async()=>{while(on){try{if(v.readyState>=2&&!rodando){rodando=true;{let liberado=false;const libera=()=>{if(!liberado){liberado=true;rodando=false}};   /* ETAPA 1 (melhorias): tempo limite — se o detect() nunca terminar, a leitura não fica presa */
+   det.detect(v).then(r=>{if(r&&r.length){ultimaConf=typeof r[0].confidence==="number"?r[0].confidence:null;dedupe(String(r[0].rawValue))}}).catch(()=>{}).then(libera);setTimeout(libera,1500)}
    if(Date.now()-(ULTQUADRO?ULTQUADRO.quando:0)>400)guardarQuadro(v)}}catch(e){}await new Promise(r=>setTimeout(r,40))}})();
  const mover=async(alvo)=>{
   const t=stream.getVideoTracks()[0],c=t&&t.getCapabilities&&t.getCapabilities();
