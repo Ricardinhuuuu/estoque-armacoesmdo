@@ -2343,4 +2343,39 @@ if(window.MDO_RESET_FEITO){const m=$("lgCadMsg");if(m)m.textContent="Reset concl
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
 </script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.9.2 · 2026-11</div>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "COLE_AQUI_SUA_API_KEY",
+    authDomain: "estoque-armacoesmdo.firebaseapp.com",
+    projectId: "estoque-armacoesmdo",
+    appId: "COLE_AQUI_SEU_APP_ID"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  let ignorarPrimeiraLeitura = true;
+  let ultimoTimestampVisto = 0;
+
+  onSnapshot(doc(db, "sync_status", "estoque_mdo"), (snap) => {
+    if (!snap.exists()) return;
+    const dados = snap.data() || {};
+    const ts = Number(dados.atualizadoEm || 0);
+
+    if (ignorarPrimeiraLeitura) {
+      ignorarPrimeiraLeitura = false;
+      ultimoTimestampVisto = ts;
+      return;
+    }
+
+    if (ts && ts === ultimoTimestampVisto) return;
+    ultimoTimestampVisto = ts;
+
+    // Dispara um evento global para o seu código do index.html / src atualizar a tela
+    window.dispatchEvent(new CustomEvent("mdo:sincronizar", { detail: dados }));
+  });
+</script> 
 </body></html>
