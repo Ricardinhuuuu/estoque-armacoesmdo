@@ -10,6 +10,7 @@
     "test": "node tests/run-tests.js"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.9.5"
+    "@neondatabase/serverless": "^0.9.5",
+    "firebase-admin": "^12.7.0"
   }
 }
