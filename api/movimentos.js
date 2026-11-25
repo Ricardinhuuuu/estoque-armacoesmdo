@@ -14,6 +14,7 @@
  */
 
 const { aplicarLote } = require("./_lib/movimentos.js");
+const { notificarSincronizacao } = require("./_lib/firestore-sync");
 
 /* Postgres por HTTP (driver @neondatabase/serverless), carregado só quando a API é usada */
 async function sql(cliente, texto, params) {
@@ -165,11 +166,26 @@ module.exports = async function handler(req, res) {
 
     await gravarAceitos(db, resultado.aceitos);
 
+    if (resultado.aceitos.length > 0 || produtosNovos > 0) {
+      await notificarSincronizacao("movimentos", {
+        aceitos: resultado.aceitos.length,
+        produtosNovos,
+      });
+    }
+
     res.status(200).json({
       ok: true,
       confirmados: resultado.aceitos.map((m) => m.id),
       repetidos: resultado.repetidos,
       recusados: resultado.recusados,
+      saldos: Object.fromEntries(resultado.saldos),
+      produtosNovos,
+      servidorEm: Date.now(),
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, erro: "falha ao gravar: " + (e && e.message ? e.message : String(e)) });
+  }
+};
       saldos: Object.fromEntries(resultado.saldos),
       produtosNovos,
       servidorEm: Date.now(),
