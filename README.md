@@ -129,6 +129,7 @@ Ver `revisao-estoque-armacoesmdo.md` para o relatório completo (arquivo e linha
 | 7 | Códigos normalizados sem perder zeros à esquerda (leitura, digitação e planilha) |
 | 8 | Digitação manual do mesmo código funciona; gravação só da chave alterada |
 | 9 | Ações da lista e do admin são `<button>` (teclado e leitor de tela) |
+Atualizando variáveis de ambiente
 | 10 | Leitura por foto libera o leitor (`clear`) e separa erro de rede de foto ilegível |
 | 11 | Contagem mostra o que foi somado e permite reduzir item a item |
 | 12 | `index.html` recuperou ícone, tema e modo standalone do iOS |
