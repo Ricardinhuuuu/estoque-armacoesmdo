@@ -1,4 +1,4 @@
-# 📦 MDO Estoque — Sistema de Contagem e Controle de Estoque
+# 📦 MDO Estoque — Sistema de Contagem e Controle de Estoque 
 
 Aplicativo de contagem e controle de estoque de armações MDO. Funciona no navegador do celular
 (Safari/iPhone e Chrome/Android), sem instalação e sem servidor: os dados ficam no aparelho
