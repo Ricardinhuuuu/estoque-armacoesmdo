@@ -11,8 +11,10 @@ async function conectar() {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
   try {
-    return require("@neondatabase/serverless")(url);
+    const { Pool } = require("@neondatabase/serverless");
+    return new Pool({ connectionString: url });
   } catch (e) {
+    console.error("[estado] falha ao abrir conexão:", e && e.message);
     return null;
   }
 }
@@ -70,5 +72,7 @@ module.exports = async function handler(req, res) {
     });
   } catch (e) {
     res.status(500).json({ ok: false, erro: "falha ao ler: " + (e && e.message ? e.message : String(e)) });
+  } finally {
+    try { await db.end(); } catch (e) { /* fecha a conexão; erro ao fechar não importa */ }
   }
 };
