@@ -2343,7 +2343,51 @@ if(window.MDO_RESET_FEITO){const m=$("lgCadMsg");if(m)m.textContent="Reset concl
 /* ETAPA 5 — alertas avaliados na abertura; sem repetir o mesmo aviso no mesmo dia */
 try{if(typeof alertas==="function"&&cur)alertas()}catch(e){}
 </script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.9.2 · 2026-11</div>
+<script>
+  // Conecta o sinal em tempo real do Firebase com a sincronização do Estoque MDO
+  window.addEventListener("mdo:sincronizar", () => {
+    if (typeof syncAtivo === "function" && syncAtivo() && typeof sincronizar === "function") {
+      sincronizar({ silencioso: false });
+    }
+  });
+</script>
 <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "SUA_API_KEY_REAL_AQUI",
+    authDomain: "estoque-armacoesmdo.firebaseapp.com",
+    projectId: "estoque-armacoesmdo",
+    appId: "SEU_APP_ID_REAL_AQUI"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  let ignorarPrimeiraLeitura = true;
+  let ultimoTimestampVisto = 0;
+
+  onSnapshot(doc(db, "sync_status", "estoque_mdo"), (snap) => {
+    if (!snap.exists()) return;
+    const dados = snap.data() || {};
+    const ts = Number(dados.atualizadoEm || 0);
+
+    if (ignorarPrimeiraLeitura) {
+      ignorarPrimeiraLeitura = false;
+      ultimoTimestampVisto = ts;
+      return;
+    }
+
+    if (ts && ts === ultimoTimestampVisto) return;
+    ultimoTimestampVisto = ts;
+
+    window.dispatchEvent(new CustomEvent("mdo:sincronizar", { detail: dados }));
+  }, (erro) => {
+    console.warn("Aviso no listener em tempo real:", erro);
+  });
+</script>
+</body></html>
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
