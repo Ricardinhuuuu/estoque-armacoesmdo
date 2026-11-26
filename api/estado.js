@@ -4,15 +4,25 @@
  * Devolve os produtos e as movimentações confirmadas no servidor, para um aparelho
  * receber o que outro aparelho registrou. Só leitura: nunca altera nada.
  *
- * Variáveis de ambiente: DATABASE_URL e SYNC_TOKEN (as mesmas de /api/movimentos).
+ * Variáveis de ambiente: POSTGRES_URL (ou DATABASE_URL) e SYNC_TOKEN, as mesmas de /api/movimentos.
  */
 
+const { Pool } = require("pg");
+
+let pool = null;
+
 async function conectar() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) return null;
   try {
-    const { Pool } = require("@neondatabase/serverless");
-    return new Pool({ connectionString: url });
+    if (!pool) {
+      pool = new Pool({
+        connectionString: url.replace(/\?.*$/, ""),
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+      });
+    }
+    return pool;
   } catch (e) {
     console.error("[estado] falha ao abrir conexão:", e && e.message);
     return null;
@@ -33,7 +43,7 @@ module.exports = async function handler(req, res) {
   if (enviado !== segredo) { res.status(401).json({ ok: false, erro: "credencial inválida" }); return; }
 
   const db = await conectar();
-  if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (DATABASE_URL)", modo: "local" }); return; }
+  if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (POSTGRES_URL)", modo: "local" }); return; }
 
   const desde = Number((req.query && req.query.desde) || 0) || 0;
   /* ETAPA 6: não carregar tudo de uma vez — pagina as movimentações */
@@ -72,7 +82,5 @@ module.exports = async function handler(req, res) {
     });
   } catch (e) {
     res.status(500).json({ ok: false, erro: "falha ao ler: " + (e && e.message ? e.message : String(e)) });
-  } finally {
-    try { await db.end(); } catch (e) { /* fecha a conexão; erro ao fechar não importa */ }
   }
 };
