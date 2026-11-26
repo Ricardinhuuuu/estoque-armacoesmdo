@@ -6,32 +6,40 @@
  * para tirar a operação da fila de pendentes.
  *
  * Variáveis de ambiente (Vercel › Project › Settings › Environment Variables):
- *   DATABASE_URL   string de conexão do Postgres (Vercel Postgres / Neon)
+ *   POSTGRES_URL   string de conexão do Postgres (criada pela integração Supabase;
+ *                  DATABASE_URL funciona como alternativa)
  *   SYNC_TOKEN     segredo compartilhado com o aplicativo
  *
  * Sem essas variáveis a API responde 503 e o app continua funcionando no modo local:
  * nada é mostrado como sincronizado sem confirmação real do servidor.
  */
 
+const { Pool } = require("pg");
 const { aplicarLote } = require("./_lib/movimentos.js");
 const { notificarSincronizacao } = require("./_lib/firestore-sync");
 
-/* Postgres por HTTP (driver @neondatabase/serverless), carregado só quando a API é usada */
 async function sql(cliente, texto, params) {
   return cliente.query(texto, params);
 }
 
+let pool = null;
+
 async function conectar() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) return null;
-  let neon;
   try {
-    neon = require("@neondatabase/serverless");
+    if (!pool) {
+      pool = new Pool({
+        /* tira o "?sslmode=..." da URL para valer a configuração de ssl abaixo */
+        connectionString: url.replace(/\?.*$/, ""),
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+      });
+    }
+    return pool;
   } catch (e) {
     return null;
   }
-  const cliente = neon(url);
-  return cliente;
 }
 
 async function garantirTabelas(db) {
@@ -55,6 +63,9 @@ async function garantirTabelas(db) {
     cor text,
     inicial integer not null default 0
   )`);
+  /* Supabase: impede o acesso a essas tabelas pela chave pública (anon) */
+  await sql(db, "alter table mdo_movimentos enable row level security");
+  await sql(db, "alter table mdo_produtos enable row level security");
 }
 
 /* ETAPA 3 — o aparelho manda o catálogo junto com o lote.
@@ -148,7 +159,7 @@ module.exports = async function handler(req, res) {
 
   const db = await conectar();
   if (!db) {
-    res.status(503).json({ ok: false, erro: "banco não configurado (DATABASE_URL)", modo: "local" });
+    res.status(503).json({ ok: false, erro: "banco não configurado (POSTGRES_URL)", modo: "local" });
     return;
   }
 
@@ -178,14 +189,6 @@ module.exports = async function handler(req, res) {
       confirmados: resultado.aceitos.map((m) => m.id),
       repetidos: resultado.repetidos,
       recusados: resultado.recusados,
-      saldos: Object.fromEntries(resultado.saldos),
-      produtosNovos,
-      servidorEm: Date.now(),
-    });
-  } catch (e) {
-    res.status(500).json({ ok: false, erro: "falha ao gravar: " + (e && e.message ? e.message : String(e)) });
-  }
-};
       saldos: Object.fromEntries(resultado.saldos),
       produtosNovos,
       servidorEm: Date.now(),
