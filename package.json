@@ -1,7 +1,7 @@
 {
   "name": "mdo-estoque",
   "private": true,
-  "version": "6.7.0",
+  "version": "6.7.1",
   "description": "MDO Estoque — controle de armações com bipagem, câmera e sincronização na Vercel",
   "engines": {
     "node": ">=18"
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.5",
-    "firebase-admin": "^12.7.0"
+    "firebase-admin": "^12.7.0",
+    "pg": "^8.11.3"
   }
 }
