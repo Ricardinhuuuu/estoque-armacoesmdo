@@ -14,18 +14,30 @@
  * Ação de administrador exige o cabeçalho X-MDO-Sessao com um token válido de administrador
  * ativo. Quem decide papel, bloqueio e senha é o servidor — nunca o aplicativo.
  *
- * Variáveis de ambiente: DATABASE_URL e SYNC_TOKEN (as mesmas de /api/movimentos).
+ * Variáveis de ambiente: POSTGRES_URL (criada pela integração Supabase; DATABASE_URL como
+ * alternativa) e SYNC_TOKEN (as mesmas de /api/movimentos).
  */
 
+const { Pool } = require("pg");
 const C = require("./_lib/contas.js");
 
 const VALIDADE_SESSAO = 12 * 60 * 60 * 1000; /* 12 horas */
 
+let pool = null;
+
 async function conectar() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) return null;
   try {
-    return require("@neondatabase/serverless")(url);
+    if (!pool) {
+      pool = new Pool({
+        /* tira o "?sslmode=..." da URL para valer a configuração de ssl abaixo */
+        connectionString: url.replace(/\?.*$/, ""),
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+      });
+    }
+    return pool;
   } catch (e) {
     return null;
   }
@@ -51,6 +63,9 @@ async function garantirTabelas(db) {
     criado_em bigint not null,
     expira_em bigint not null
   )`);
+  /* Supabase: impede o acesso a essas tabelas pela chave pública (anon) */
+  await db.query("alter table mdo_usuarios enable row level security");
+  await db.query("alter table mdo_sessoes enable row level security");
 }
 
 function daLinha(r) {
@@ -121,7 +136,7 @@ module.exports = async function handler(req, res) {
   if (!corpo || !corpo.acao) { res.status(400).json({ ok: false, erro: "informe acao" }); return; }
 
   const db = await conectar();
-  if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (DATABASE_URL)", modo: "local" }); return; }
+  if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (POSTGRES_URL)", modo: "local" }); return; }
 
   const token = (req.headers && (req.headers["x-mdo-sessao"] || "")).toString();
   const agora = Date.now();
