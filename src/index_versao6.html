@@ -2553,49 +2553,13 @@ async function impRejX(){
   [[IMP_ABA,[IMP_COLS.concat(["motivo_rejeicao","linha_original"])].concat(IMPREL.rej.map(x=>x.bruto.concat([x.motivo,x.linha]))),[18,12,20,38,60,14]]]);
 }
 /* IMP_FIM */
-// ============================================================================
-// Passo 3: Ouvinte de sincronização ("mdo:sincronizar")
-// ============================================================================
-(() => {
-  let syncTimer = null;
-  let sincronizandoTela = false;
-
-  const recarregarTelaMdo = () => {
-    if (sincronizandoTela) return;
-    sincronizandoTela = true;
-
-    try {
-      // 1. Atualiza catálogo / estado persistido, se existirem no escopo
-      if (typeof atualizarCatalogo === "function") {
-        atualizarCatalogo();
-      }
-
-      // 2. Re-renderiza o estoque / busca atual
-      if (typeof buscarPaginado === "function") {
-        buscarPaginado();
-      } else if (typeof renderEstoque === "function") {
-        renderEstoque();
-      }
-
-      // 3. Re-renderiza histórico e painel, se existirem
-      if (typeof renderHist === "function") {
-        renderHist();
-      }
-      if (typeof painelDados === "function") {
-        painelDados();
-      }
-    } catch (err) {
-      console.error("Erro ao recarregar tela após mdo:sincronizar:", err);
-    } finally {
-      sincronizandoTela = false;
-    }
-  };
-
-  window.addEventListener("mdo:sincronizar", () => {
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(recarregarTelaMdo, 120);
-  });
-})();
+window.addEventListener("mdo:sincronizar", () => {
+  if (typeof atualizarCatalogo === "function") atualizarCatalogo();
+  if (typeof buscarPaginado === "function") buscarPaginado();
+  else if (typeof renderEstoque === "function") renderEstoque();
+  if (typeof renderHist === "function") renderHist();
+  if (typeof painelDados === "function") painelDados();
+});
  try{impDrawRel()}catch(e){}
 </script><div id="mdoVer" style="text-align:center;font-size:11px;color:var(--mu);padding:10px 0 4px">MDO Estoque · versão 6.7.0 · 2026-11</div>
 </body></html>
