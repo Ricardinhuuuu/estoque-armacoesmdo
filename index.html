@@ -1692,6 +1692,25 @@ function adminOK(){
  return true}
 async function act(a,i){
  if(a!=="av"&&!adminOK())return;
+  const nome=String(($("ctNovoNome")&&$("ctNovoNome").value)||"").trim();
+  const login=String(($("ctNovoLogin")&&$("ctNovoLogin").value)||"").trim().toLowerCase();
+  const papel=($("ctNovoPapel")&&$("ctNovoPapel").value)==="admin"?"admin":"operador";
+  const senha=String(($("ctNovoSenha")&&$("ctNovoSenha").value)||"");
+  if(!nomeOK(nome))return toast("Digite nome e sobrenome.",true);
+  if(!login||login.length<3||/\s/.test(login))return toast("Login inválido (mín. 3 caracteres, sem espaço).",true);
+  if(senha.length<6)return toast("A senha provisória precisa ter pelo menos 6 caracteres.",true);
+  apiContas("criar",{nome,login,papel,senha}).then(j=>{
+   if(!j.ok)return toast(j.erro||"Não foi possível criar a conta.",true);
+   if($("ctNovoNome"))$("ctNovoNome").value="";
+   if($("ctNovoLogin"))$("ctNovoLogin").value="";
+   if($("ctNovoSenha"))$("ctNovoSenha").value="";
+   if($("ctNovoPapel"))$("ctNovoPapel").value="operador";
+   alert("Conta criada para "+nome+" ("+login+") como "+(papel==="admin"?"Administrador":"Operador")+".\nSenha provisória: "+senha+"\nEle será obrigado a trocar a senha no primeiro acesso.");
+   audit("CRIAR CONTA SERVIDOR",login,papel);
+   act("ctListar");
+  }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));
+  return}
+ if(a==="ctListar"){
  if(a==="ctListar"){apiContas("listar").then(j=>{
    const alvo=$("ctL");if(!alvo)return;
    if(!j.ok){alvo.innerHTML='<div class="mu">'+esc(j.erro||"Falhou")+'</div>';return}
