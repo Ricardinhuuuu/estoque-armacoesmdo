@@ -1710,7 +1710,6 @@ async function act(a,i){
    act("ctListar");
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));
   return}
- if(a==="ctListar"){
  if(a==="ctListar"){apiContas("listar").then(j=>{
    const alvo=$("ctL");if(!alvo)return;
    if(!j.ok){alvo.innerHTML='<div class="mu">'+esc(j.erro||"Falhou")+'</div>';return}
@@ -1721,14 +1720,17 @@ async function act(a,i){
     (u.st==="pend"?'<button type="button" class="btn ghost" data-a="ctAprov" data-l="'+esc(u.l)+'">Aprovar</button>':'')+
     (u.st==="ativo"?'<button type="button" class="btn ghost" data-a="ctBloq" data-l="'+esc(u.l)+'">Bloquear</button>':'')+
     (u.st==="ativo"?'<button type="button" class="btn ghost" data-a="ctDesat" data-l="'+esc(u.l)+'">Desativar</button>':'')+
+    (u.l!==cur.l&&u.st==="ativo"?'<button type="button" class="btn ghost" data-a="ctPapel" data-l="'+esc(u.l)+'" data-p="'+(u.r==="admin"?"operador":"admin")+'">'+(u.r==="admin"?"Tornar operador":"Tornar admin")+'</button>':'')+
     '<button type="button" class="btn ghost" data-a="ctSenha" data-l="'+esc(u.l)+'">Senha provisória</button></span></div>').join("")||'<div class="mu">Nenhuma conta no servidor ainda.</div>';
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
- if(a==="ctDesb"||a==="ctReat"||a==="ctDesat"||a==="ctSenha"||a==="ctAprov"||a==="ctBloq"){
-  const acaoMap={ctAprov:"aprovar",ctBloq:"bloquear",ctDesb:"desbloquear",ctReat:"reativar",ctDesat:"desativar",ctSenha:"senhaProvisoria"};
-  apiContas(acaoMap[a],{login:i}).then(j=>{
+ if(a==="ctDesb"||a==="ctReat"||a==="ctDesat"||a==="ctSenha"||a==="ctAprov"||a==="ctBloq"||a==="ctPapel"){
+  const acaoMap={ctAprov:"aprovar",ctBloq:"bloquear",ctDesb:"desbloquear",ctReat:"reativar",ctDesat:"desativar",ctSenha:"senhaProvisoria",ctPapel:"mudarPapel"};
+  const btnEl=document.querySelector('#adm [data-a="ctPapel"][data-l="'+CSS.escape(String(i))+'"]');
+  const extra=a==="ctPapel"?{login:i,papel:(btnEl&&btnEl.dataset.p)||"admin"}:{login:i};
+  apiContas(acaoMap[a],extra).then(j=>{
    if(!j.ok)return toast(j.erro||"Falhou",true);
    if(j.senhaProvisoria)alert("Senha provisória de "+i+": "+j.senhaProvisoria+"\nO operador será obrigado a trocá-la ao entrar.");
-   audit("CONTA SERVIDOR",i,acaoMap[a]);act("ctListar");
+   audit("CONTA SERVIDOR",i,acaoMap[a]+(extra.papel?" -> "+extra.papel:""));act("ctListar");
   }).catch(e=>toast((e&&e.message)||"Sem conexão com o servidor.",true));return}
  if(a==="leitCSV"){
   const l=leitLista();
