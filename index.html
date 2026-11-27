@@ -1646,7 +1646,6 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
  h+='<div class="card"><h3>🔄 Sincronização</h3><div class="mu" id="syS"></div>'+
   '<input class="in" id="syU" placeholder="Endereço do app na Vercel (https://seu-app.vercel.app)" value="'+esc(SYNC.url||"")+'" autocapitalize="none" inputmode="url">'+
   '<input class="in" id="syT" type="password" placeholder="Segredo compartilhado (SYNC_TOKEN)" value="'+esc(SYNC.token||"")+'" autocapitalize="none">'+
-  '<button type="button" class="btn" id="syB">🔄 Sincronizar agora</button>'+
   '<button type="button" class="btn ghost" data-a="sySalvar">💾 Salvar configuração</button>'+
   '<div class="mu">Pendentes neste aparelho: <b>'+FILA.length+'</b>'+(SYNC.ultimoErro?' · último erro: '+esc(SYNC.ultimoErro):'')+'</div></div>';
  h+='<div class="card"><h3>🧪 Conferência das leituras</h3>'+
