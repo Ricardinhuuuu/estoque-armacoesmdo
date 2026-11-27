@@ -184,7 +184,11 @@ module.exports = async function handler(req, res) {
     }
 
     /* ---------- cadastrar (autocadastro na tela de início, sem e-mail) ---------- */
+   /* ---------- cadastrar bloqueado: apenas o administrador cria contas ---------- */
     if (acao === "cadastrar") {
+      res.status(403).json({ ok: false, erro: "Autocadastro desativado. Peça ao administrador para criar seu acesso." });
+      return;
+    }
       const login = C.normLogin(corpo.login);
       const nome = String(corpo.nome || "").trim();
       const senha = String(corpo.senha || "");
