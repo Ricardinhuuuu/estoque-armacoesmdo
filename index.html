@@ -599,6 +599,7 @@ window.addEventListener("online",()=>{if(syncAtivo())sincronizar({silencioso:tru
 function syncAuto(){if(syncAtivo()&&!document.hidden)sincronizar({silencioso:true})}
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncAuto()});
 window.addEventListener("focus",syncAuto);
+window.addEventListener("pageshow",syncAuto); 
 setInterval(()=>{if(syncAtivo()&&(FILA.length||!document.hidden))sincronizar({silencioso:true})},30000);
 setTimeout(syncAuto,1500);
 
