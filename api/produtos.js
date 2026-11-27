@@ -4,15 +4,27 @@
  * Busca eficiente no banco, com filtro e paginação: o aplicativo nunca precisa
  * carregar o catálogo inteiro para procurar uma peça.
  *
- * Variáveis de ambiente: DATABASE_URL e SYNC_TOKEN (as mesmas das outras rotas).
+ * Variáveis de ambiente: POSTGRES_URL (ou DATABASE_URL) e SYNC_TOKEN, as mesmas das outras rotas.
  */
 
+const { Pool } = require("pg");
+
+let pool = null;
+
 async function conectar() {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) return null;
   try {
-    return require("@neondatabase/serverless")(url);
+    if (!pool) {
+      pool = new Pool({
+        connectionString: url.replace(/\?.*$/, ""),
+        ssl: { rejectUnauthorized: false },
+        max: 3,
+      });
+    }
+    return pool;
   } catch (e) {
+    console.error("[produtos] falha ao abrir conexão:", e && e.message);
     return null;
   }
 }
@@ -28,7 +40,7 @@ module.exports = async function handler(req, res) {
   if (enviado !== segredo) { res.status(401).json({ ok: false, erro: "credencial inválida" }); return; }
 
   const db = await conectar();
-  if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (DATABASE_URL)", modo: "local" }); return; }
+  if (!db) { res.status(503).json({ ok: false, erro: "banco não configurado (POSTGRES_URL)", modo: "local" }); return; }
 
   const q = String((req.query && req.query.q) || "").trim();
   const tamanho = Math.min(100, Math.max(1, Number((req.query && req.query.tamanho) || 20) || 20));
