@@ -547,8 +547,11 @@ const SO_LOCAL=["status","stMotivo","origem"];
 function paraEnvio(m){const o=Object.assign({},m,{aparelho:m.aparelho||aparelhoId()});SO_LOCAL.forEach(k=>delete o[k]);return o}
 /* envia o lote; devolve o resultado do servidor */
 async function enviarLote(movs){
+ const usados=new Set(movs.map(m=>String(m.c)));
+ const produtos=PP.filter(p=>usados.has(String(p[0]))).map(p=>({
+  codigo:String(p[0]),descricao:p[1],cor:p[2],inicial:Math.max(0,parseInt(p[3],10)||0)}));
  const r=await fetchT(SYNC.url.replace(/\/$/,"")+"/api/movimentos",{
-  method:"POST",headers:syncHeaders(),body:JSON.stringify({movimentos:movs})},20000);
+  method:"POST",headers:syncHeaders(),body:JSON.stringify({produtos:produtos,movimentos:movs})},20000);
  const j=await r.json().catch(()=>({}));
  if(!r.ok||!j.ok)throw new Error(j.erro||("HTTP "+r.status));
  return j;
