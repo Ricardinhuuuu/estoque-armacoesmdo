@@ -1645,7 +1645,15 @@ function drawAdm(){const b=bal(),low=PP.map((p,i)=>[p,b[i]]).filter(([p,v])=>MIN
    return '<div class="item"><span><b>'+esc(ALERTAS[k].rot)+'</b><span class="mu">'+(on?"ligado":"desligado")+'</span></span>'+
     '<button type="button" class="pill" data-a="alCfg" data-i="'+k+'" data-v="'+(on?"0":"1")+'">'+(on?"Desligar":"Ligar")+'</button></div>'}).join("")+'</div>';
  if(contasAtivas())h+='<div class="card"><h3>👥 Contas no servidor</h3><div class="mu" id="ctS">'+(sessValida()?"Sessão válida — o servidor decide papel e bloqueio.":"Sem sessão de servidor: entre novamente para administrar contas.")+'</div>'+
-  '<button type="button" class="btn" data-a="ctListar">🔄 Carregar contas do servidor</button>'+
+  '<div style="margin:10px 0;padding:10px;border:1px solid var(--bd,#334155);border-radius:10px">'+
+  '<div style="font-weight:600;margin-bottom:6px">➕ Cadastrar novo usuário</div>'+
+  '<input class="in" id="ctNovoNome" placeholder="Nome e sobrenome" autocomplete="name">'+
+  '<input class="in" id="ctNovoLogin" placeholder="Login (sem espaço, ex.: joao.silva)" autocapitalize="none" autocomplete="off">'+
+  '<label class="mu" style="display:block;margin:6px 0 2px">Perfil inicial</label>'+
+  '<select class="in" id="ctNovoPapel"><option value="operador" selected>Operador</option><option value="admin">Administrador</option></select>'+
+  '<input class="in" id="ctNovoSenha" type="password" placeholder="Senha provisória (mín. 6 caracteres)" autocomplete="new-password">'+
+  '<button type="button" class="btn" data-a="ctCriar">Criar conta com senha provisória</button></div>'+
+  '<button type="button" class="btn ghost" data-a="ctListar">🔄 Carregar contas do servidor</button>'+
   '<div id="ctL"></div></div>';
  h+='<div class="card"><h3>🔄 Sincronização</h3><div class="mu" id="syS"></div>'+
   '<input class="in" id="syU" placeholder="Endereço do app na Vercel (https://seu-app.vercel.app)" value="'+esc(SYNC.url||"")+'" autocapitalize="none" inputmode="url">'+
