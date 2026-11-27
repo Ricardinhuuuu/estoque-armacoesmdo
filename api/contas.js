@@ -230,6 +230,10 @@ module.exports = async function handler(req, res) {
       res.status(200).json({ ok: true });
       return;
     }
+   if (quem && quem.temp) {
+      res.status(403).json({ ok: false, erro: "Troca de senha obrigatória antes de usar o sistema.", trocaObrigatoria: true });
+      return;
+    }
     if (!exigirAdmin(quem)) { res.status(403).json({ ok: false, erro: "Só o administrador pode fazer isso." }); return; }
 
     if (acao === "listar") {
