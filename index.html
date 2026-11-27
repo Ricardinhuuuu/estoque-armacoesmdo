@@ -595,7 +595,12 @@ async function sincronizarUma(opts){
 }
 /* reenvio automático: tenta de novo quando a rede volta */
 window.addEventListener("online",()=>{if(syncAtivo())sincronizar({silencioso:true})});
-setInterval(()=>{if(syncAtivo()&&FILA.length)sincronizar({silencioso:true})},30000);
+/* 3B — sincronização automática: ao abrir, ao voltar para o app e a cada 30 s (rede de segurança se o sinal do Firebase falhar) */
+function syncAuto(){if(syncAtivo()&&!document.hidden)sincronizar({silencioso:true})}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncAuto()});
+window.addEventListener("focus",syncAuto);
+setInterval(()=>{if(syncAtivo()&&(FILA.length||!document.hidden))sincronizar({silencioso:true})},30000);
+setTimeout(syncAuto,1500);
 
 /* ===== ETAPA 6 — Leitura do cadastro por página, sem carregar tudo de uma vez ===== */
 /* O app continua local; quando o servidor está ligado, oferece a leitura paginada do catálogo. */
