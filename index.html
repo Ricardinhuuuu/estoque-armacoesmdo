@@ -296,7 +296,7 @@ function showLogin(){
  $("lgB").textContent=u&&u.st==="bloq"&&u.r!=="admin"?"Acesso bloqueado":(f?"Criar e entrar":"Entrar")}
 function enter(l){
  cur=U.find(x=>x.l===l);if(!cur||cur.st==="pend"||cur.st==="desat"||cur.st==="bloq"){cur=null;return showLogin()}
- sv(K.s,l);$("lg").style.display="none";$("lgP").value="";
+ sv(K.s,l);$("lg").style.display="none";document.body.style.overflow="";document.documentElement.style.overflow="";$("lgP").value="";
  $("who").textContent="👤 "+cur.n+(isA()?" · Administrador":" · Operador");$("tAdm").style.display=isA()?"":"none";
  const d=new Date().toISOString().slice(0,10),antes=ls(K.abd,"");
  if(isA()&&ls(K.ab,true)){if(antes!==d){sP("abd",d);backup()}}
