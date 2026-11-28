@@ -1692,6 +1692,7 @@ function adminOK(){
  return true}
 async function act(a,i){
  if(a!=="av"&&!adminOK())return;
+ if(a==="ctCriar"){
   const nome=String(($("ctNovoNome")&&$("ctNovoNome").value)||"").trim();
   const login=String(($("ctNovoLogin")&&$("ctNovoLogin").value)||"").trim().toLowerCase();
   const papel=($("ctNovoPapel")&&$("ctNovoPapel").value)==="admin"?"admin":"operador";
