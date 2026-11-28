@@ -289,7 +289,7 @@ function audit(acao,alvo,extra){
 /* ===== Login / perfis ===== */
 function showLogin(){
  modoCad=false;
- const f=!U.length;$("lg").style.display="flex";$("lgCad").style.display="";$("lgCadMsg").textContent="";$("lgT").textContent=f?"Primeiro acesso: crie o administrador":"Entre com seu login e senha";
+ const f=!U.length;$("lg").style.display="flex";$("lgT").textContent=f?"Primeiro acesso: crie o administrador":"Entre com seu login e senha";
  $("lgN").style.display=f?"block":"none";$("lgS").style.display=f?"none":"block";$("lgB").textContent=f?"Criar e entrar":"Entrar";$("lgE").textContent="";
  const u=f?null:U.find(x=>x.l===String($("lgL").value).trim().toLowerCase());
  $("lgB").disabled=!!(u&&u.st==="bloq"&&u.r!=="admin");
